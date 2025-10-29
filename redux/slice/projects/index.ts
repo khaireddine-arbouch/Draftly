@@ -51,6 +51,14 @@ const projectsSlice = createSlice({
       state.error = action.payload;
     },
 
+    // This one was added by me: Double check
+    fetchProjectsSuccess: (state, action: PayloadAction<ProjectSummary[]>) => {
+      state.projects = action.payload;
+      state.total = action.payload.length;
+      state.isLoading = false;
+      state.error = null;
+    },
+
     // Create Project Actions
     createProjectStart: (state) => {
       state.isCreating = true;
@@ -97,6 +105,7 @@ const projectsSlice = createSlice({
 
 export const {
   fetchProjectsFailure,
+  fetchProjectsSuccess,
   createProjectStart,
   createProjectSuccess,
   createProjectFailure,

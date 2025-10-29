@@ -15,6 +15,7 @@ import CreateProject from "./buttons/project";
 type TabProps = {
   label: string;
   href: string;
+  path: string;
   icon?: React.ReactNode;
 };
 
@@ -25,14 +26,24 @@ export function Navbar() {
 
   const me = useAppSelector((state) => state.user as Profile | null);
 
+  // Derive the session segment from the current pathname (e.g. /dashboard/{session}/...)
+  const segments = pathname.split("/");
+  const dashboardIndex = segments.indexOf("dashboard");
+  const sessionSegment =
+    dashboardIndex !== -1 && segments.length > dashboardIndex + 1
+      ? segments[dashboardIndex + 1]
+      : me?.name || "";
+
   const tabs: TabProps[] = [
     {
-      href: `/dashboard/canvas/?project=${projectId}`,
+      href: `/dashboard/${sessionSegment}/canvas${projectId ? `?project=${projectId}` : ""}`,
+      path: `/dashboard/${sessionSegment}/canvas`,
       label: "Canvas",
       icon: <Hash className="w-4 h-4" />,
     },
     {
-      href: `/dashboard/style-guide/?project=${projectId}`,
+      href: `/dashboard/${sessionSegment}/style-guide${projectId ? `?project=${projectId}` : ""}`,
+      path: `/dashboard/${sessionSegment}/style-guide`,
       label: "Style Guide",
       icon: <LayoutTemplate className="w-4 h-4" />,
     },
@@ -74,14 +85,14 @@ export function Navbar() {
               href={tab.href}
               className={[
                 "group inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition",
-                `${pathname}?project=${projectId}` === tab.href
+                pathname.startsWith(tab.path)
                   ? "bg-white/12 text-white border border-white/16 backdrop-blur-sm"
                   : "text-zinc-400 hover:text-zinc-200 hover:bg-white/6 border border-transparent",
               ].join("")}
             >
               <span
                 className={
-                  `${pathname}?project=${projectId}` === tab.href
+                  pathname.startsWith(tab.path)
                     ? "opacity-100"
                     : "opacity-70 group-hover:opacity-90"
                 }

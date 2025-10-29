@@ -91,3 +91,52 @@ async function getNextProjectNumber(ctx: any, userId: string): Promise<number> {
 
   return projectNumber; // Return the current project number to be used
 }
+
+export const getUserProjects = query({
+  args: {
+    userId: v.id('users'),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { userId, limit = 20 }) => {
+    const allProjects = await ctx.db
+      .query('projects')
+      .withIndex('by_userId_lastModified', (q) => q.eq('userId', userId))
+      .order('desc')
+      .collect();
+      
+    const projects = allProjects.slice(0, limit);
+
+    return projects.map((project) => ({
+      _id: project._id,
+      name: project.name,
+      thumbnail: project.thumbnail,
+      lastModified: project.lastModified,
+      createdAt: project.createdAt,
+      isPublic: project.isPublic,
+      projectNumber: project.projectNumber,
+    }));
+  },
+});
+
+export const getProjectStyleGuide = query({
+  args: {projectId: v.id('projects')}, // Ensure correct type for projectId
+  handler: async (ctx, { projectId }) => {
+    const userId = await getAuthUserId(ctx)
+
+    // Check if user is authenticated
+    if (!userId) throw new Error('Not authenticated')
+
+    // Fetch the project from the database
+    const project = await ctx.db.get(projectId)
+    if (!project) throw new Error('Project not found')
+
+    // Check ownership or public access
+    if (project.userId !== userId && !project.isPublic) {
+      throw new Error('Access denied')
+    }
+
+    // Return parsed style guide data or null
+    return project.styleGuide ? JSON.parse(project.styleGuide) : null
+  },
+})
+
