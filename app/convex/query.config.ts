@@ -100,3 +100,22 @@ export const MoodBoardImagesQuery = async (projectId: string) => {
   return { images }
 }
 
+export const ProjectQuery = async (projectId: string) => {
+  const rawProfile = await ProfileQuery();
+  const profile = normalizeProfile(
+    // rawProfile._valueJSON as unknown as ConvexUserRaw | null
+    (rawProfile as unknown as ConvexUserRaw | null) || null
+  );
+
+  if (!profile?.id || !projectId) {
+    return { project: null, profile: null };
+  }
+
+  const project = await preloadQuery(
+    api.projects.getProject,
+    { projectId: projectId as Id<'projects'> },
+    { token: await convexAuthNextjsToken() }
+  );
+
+  return { project, profile };
+};

@@ -28,7 +28,7 @@ interface ViewportState {
   zoomStep: number;
 }
 
-const initialState: ViewportState = {
+export const initialViewportState: ViewportState = {
   scale: 1,
   minScale: 0.1,
   maxScale: 8,
@@ -91,7 +91,7 @@ export const midpoint = (a: Point, b: Point): Point => ({
 
 const viewportSlice = createSlice({
   name: "viewport",
-  initialState,
+  initialState: initialViewportState,
   reducers: {
     setTranslate(state, action: PayloadAction<Point>) {
       state.translate.x = action.payload.x;

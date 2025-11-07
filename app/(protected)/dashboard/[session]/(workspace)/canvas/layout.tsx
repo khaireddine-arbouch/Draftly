@@ -1,3 +1,5 @@
+import Toolbar from "@/components/canvas/toolbar";
+
 // Canvas Layout
 type Props = {
     children: React.ReactNode
@@ -5,8 +7,9 @@ type Props = {
 
 const Layout = ({ children }: Props) => {
     return (
-        <div>
+        <div className="w-full h-screen">
             {children}
+            <Toolbar />
         </div>
     )
 }
