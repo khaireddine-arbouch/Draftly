@@ -1,2 +1,5 @@
 import { ProjectApi } from './project'
-export const apis = [ProjectApi]
+import { BillingApi } from './billing'
+import { styleGuideApi } from './style-guide'
+import { generationApi } from './generation'
+export const apis = [ProjectApi, BillingApi, styleGuideApi, generationApi]

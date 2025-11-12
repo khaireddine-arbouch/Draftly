@@ -1,5 +1,5 @@
-To resume the project: https://youtu.be/Ak1ACaqNtM0?t=24822
- - Open -> components\canvas\toolbar\zoom\index.tsx
+To resume the project: https://youtu.be/Ak1ACaqNtM0?t=28274
+ - Open -> app\inngest\functions.ts
 
 Convex Server: npx convex dev
  - Then visit -> https://dashboard.convex.dev/t/huawei-comp/huawei-draftly/stoic-dotterel-771
@@ -8,3 +8,6 @@ Dev Server: pnpm run dev
  - Then visit -> http://localhost:3001/dashboard/
 
 Ngrok Server: ngrok http 3001 or ngrok http http://localhost:3001
+
+Inngest Dev Server: npx inngest-cli@1.11.3 dev
+ - Then visit -> http://localhost:8288/

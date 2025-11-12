@@ -6,6 +6,8 @@ import ImagesBoard from "./images.board";
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRef } from "react";
+import { useSearchParams } from "next/navigation";
+import GenerateStyleGuideButton from "@/components/buttons/style-guide";
 
 type Props = {
   guideImages: MoodBoardImage[];
@@ -28,6 +30,9 @@ function MoodboardImages({ guideImages }: Props) {
     fileInputRef.current?.click();
   };
 
+  const searchParams = useSearchParams();
+  const projectId = useSearchParams().get("project");
+
   return (
     <div className="flex flex-col gap-10">
       <div
@@ -43,7 +48,7 @@ function MoodboardImages({ guideImages }: Props) {
         onDrop={handleDrop}
       >
         <div className="absolute inset-0 opacity-5">
-          <div className="w-full h-full bg-gradient-to-br from-primary/20 to-transparent rounded-3xl" />
+          <div className="w-full h-full bg-linear-to-br from-primary/20 to-transparent rounded-3xl" />
         </div>
         {images.length > 0 && (
           <>
@@ -162,8 +167,10 @@ function MoodboardImages({ guideImages }: Props) {
           className="hidden"
         />
       </div>
-      {/* TODO: Generate with AI button */}
-      <Button className="w-fit">Generate with AI</Button>
+      <GenerateStyleGuideButton 
+        images={images}
+        fileInputRef={fileInputRef}
+        projectId={projectId ?? ""} />
       
       {images.length >= 5 && (
         <div className="text-center p-4 bg-muted/50 rounded-2xl">

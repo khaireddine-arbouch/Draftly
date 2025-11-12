@@ -4,13 +4,15 @@ import { redirect } from 'next/navigation';
 
 // Page component
 const Page = async () => {
-  // Get entitlement and profile name from the query
-  const { entitlement, profileName } = await SubscriptionEntitlementQuery();
+  const { entitlement, profileName } =
+    await SubscriptionEntitlementQuery();
 
-  const slug = profileName ? combinedSlug(profileName) : 'untitled';
-  
-  // Always route to the dashboard session slug
-  redirect(`/dashboard/${slug}`);
+  if (!entitlement) {
+    redirect(`/billing/${combinedSlug(profileName!)}`);
+  }
+
+  redirect(`/dashboard/${combinedSlug(profileName!)}`);
 };
+
 
 export default Page;

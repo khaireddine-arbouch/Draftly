@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { useAppSelector } from "@/redux/store";
 import { Profile } from "@/types/user";
 import CreateProject from "./buttons/project";
+import Autosave from "./canvas/autosave";
 
 type TabProps = {
   label: string;
@@ -24,7 +25,7 @@ export function Navbar() {
   const projectId = params.get("project");
   const pathname = usePathname();
 
-  const me = useAppSelector((state) => state.user as Profile | null);
+  const me = useAppSelector((state) => state.profile.user as Profile | null);
 
   // Derive the session segment from the current pathname (e.g. /dashboard/{session}/...)
   const segments = pathname.split("/");
@@ -57,6 +58,11 @@ export function Navbar() {
 
   const hasCanvas = pathname.includes("canvas");
   const hasStyleGuide = pathname.includes("style-guide");
+
+  const creditBalance = useQuery(
+    api.subscription.getCreditsBalance,
+    me?.id ? { userId: me.id as Id<'users'> } : "skip"
+  );
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-3 p-6 fixed top-0 left-0 right-0 z-50">
@@ -105,7 +111,7 @@ export function Navbar() {
         </div>
       </div>
       <div className="flex items-center gap-4 justify-end">
-        <span className="text-sm text-white/50">TODO: credits</span>
+        <span className="text-sm text-white/50">{creditBalance} credits</span>
         <Button
           variant="secondary"
           className="rounded-full h-12 w-12 flex items-center justify-center backdrop-blur-xl bg-white/8 border border-white/12 saturate-150 hover:bg-white/12"
@@ -118,7 +124,7 @@ export function Navbar() {
             <User className="size-5 text-black" />
           </AvatarFallback>
         </Avatar>
-
+        {hasCanvas && <Autosave />}
         {!hasCanvas && !hasStyleGuide && <CreateProject />}
       </div>
     </div>

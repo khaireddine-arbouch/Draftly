@@ -1,9 +1,13 @@
 "use client";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+import { useGenerateStyleGuideMutation } from "@/redux/api/style-guide";
+import { GeneratedUIShape, updateShape } from "@/redux/slice/shapes";
+import { useAppDispatch } from "@/redux/store";
 import { useMutation } from "convex/react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -43,56 +47,54 @@ export const useMoodBoard = (guideImages: MoodBoardImage[]) => {
   const removeMoodBoardImage = useMutation(api.moodboard.removeMoodBoardImage);
   const addMoodBoardImage = useMutation(api.moodboard.addMoodBoardImage);
 
-  const uploadImage = async (
-    file: File
-  ): Promise<{ storageId: string; url?: string }> => {
-    try {
-      // Get the upload URL (assuming `generateUploadUrl` returns a valid URL)
-      const uploadUrl = await generateUploadUrl();
+  const uploadImage = useCallback(
+    async (file: File): Promise<{ storageId: string; url?: string }> => {
+      try {
+        const uploadUrl = await generateUploadUrl();
 
-      // Perform the file upload via POST request
-      const response = await fetch(uploadUrl, {
-        method: "POST",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-
-      // Check if the response is successful (status code 2xx)
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.statusText}`);
-      }
-
-      // Assuming the response contains a JSON object with storageId and url
-      const {storageId} = await response.json();
-
-      if(projectId) {
-        await addMoodBoardImage({
-          projectId: projectId as Id<"projects">,
-          storageId: storageId as Id<"_storage">,
+        const response = await fetch(uploadUrl, {
+          method: "POST",
+          headers: { "Content-Type": file.type },
+          body: file,
         });
 
-      }
+        if (!response.ok) {
+          throw new Error(`Upload failed: ${response.statusText}`);
+        }
 
-      return {storageId};
-    } catch (error) {
-      console.error("Error uploading image:", error);
-      throw new Error("Failed to upload image. Please try again.");
-    }
-  };
+        const { storageId } = await response.json();
+
+        if (projectId) {
+          await addMoodBoardImage({
+            projectId: projectId as Id<"projects">,
+            storageId: storageId as Id<"_storage">,
+          });
+        }
+
+        return { storageId };
+      } catch (error) {
+        console.error("Error uploading image:", error);
+        throw new Error("Failed to upload image. Please try again.");
+      }
+    },
+    [addMoodBoardImage, generateUploadUrl, projectId]
+  );
 
   useEffect(() => {
     // Check if guideImages exists and has elements
     if (guideImages && guideImages.length > 0) {
       // Map guideImages to the serverImages format
-      const serverImages: MoodBoardImage[] = guideImages.map((img: any) => ({
-        id: img.id,
-        preview: img.url,
-        storageId: img.storageId,
-        uploaded: true,
-        uploading: false,
-        url: img.url,
-        isFromServer: true,
-      }));
+      const serverImages: MoodBoardImage[] = guideImages.map(
+        (img: MoodBoardImage) => ({
+          id: img.id,
+          preview: img.preview ?? img.url ?? "",
+          storageId: img.storageId,
+          uploaded: true,
+          uploading: false,
+          url: img.url,
+          isFromServer: true,
+        })
+      );
 
       // Get current images from form values (assuming `getValues` is from a form hook like `react-hook-form`)
       const currentImages = getValues("images");
@@ -241,20 +243,34 @@ export const useMoodBoard = (guideImages: MoodBoardImage[]) => {
 
           try {
             // Upload the image and get the storageId
-            const {storageId} = await uploadImage(image.file!);
+            const { storageId } = await uploadImage(image.file!);
             const finalImages = getValues("images");
 
-            const finalIndex = finalImages.findIndex((img) => img.id === image.id);
+            const finalIndex = finalImages.findIndex(
+              (img) => img.id === image.id
+            );
             if (finalIndex !== -1) {
-              finalImages[finalIndex] = { ...finalImages[finalIndex], uploaded: true, uploading: false, storageId, isFromServer: true };
+              finalImages[finalIndex] = {
+                ...finalImages[finalIndex],
+                uploaded: true,
+                uploading: false,
+                storageId,
+                isFromServer: true,
+              };
               setValue("images", [...finalImages]);
             }
           } catch (error) {
             console.error("Error uploading image:", error);
             const errorImages = getValues("images");
-            const errorIndex = errorImages.findIndex((img) => img.id === image.id);
+            const errorIndex = errorImages.findIndex(
+              (img) => img.id === image.id
+            );
             if (errorIndex !== -1) {
-              errorImages[errorIndex] = { ...errorImages[errorIndex], uploading: false, error: 'Failed to upload image. Please try again.' };
+              errorImages[errorIndex] = {
+                ...errorImages[errorIndex],
+                uploading: false,
+                error: "Failed to upload image. Please try again.",
+              };
               setValue("images", [...errorImages]);
             }
             toast.error("Failed to upload image. Please try again.");
@@ -267,7 +283,7 @@ export const useMoodBoard = (guideImages: MoodBoardImage[]) => {
     if (images.length > 0) {
       uploadPendingImages();
     }
-  }, [getValues, setValue, images]); // Dependency array to re-run on images change
+  }, [getValues, setValue, images, uploadImage]); // Dependency array to re-run on images change
 
   useEffect(() => {
     return () => {
@@ -277,8 +293,7 @@ export const useMoodBoard = (guideImages: MoodBoardImage[]) => {
         }
       });
     };
-
-  }, []);
+  }, [images]);
 
   return {
     form,
@@ -290,5 +305,128 @@ export const useMoodBoard = (guideImages: MoodBoardImage[]) => {
     handleFileInput,
     dragActive,
     canAddMore: images.length < 5,
-  }
+  };
 };
+
+export const useStyleGuide = (
+  projectId: string,
+  images: MoodBoardImage[],
+  fileInputRef: RefObject<HTMLInputElement | null>
+) => {
+  const [generateStyleGuide, { isLoading: isGenerating }] =
+    useGenerateStyleGuideMutation();
+  const router = useRouter();
+
+  // Trigger the file input when clicked
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Handle style guide generation logic
+  const handleGenerateStyleGuide = async () => {
+    // Ensure a project ID is available
+    if (!projectId) {
+      toast.error("No project selected");
+      return;
+    }
+
+    // Ensure at least one image is uploaded
+    if (images.length === 0) {
+      toast.error("Please upload at least one image to generate a style guide");
+      return;
+    }
+
+    // Check if any images are still uploading
+    if (images.some((img) => img.uploading)) {
+      toast.error("Please wait for all images to finish uploading");
+      return;
+    }
+
+    // Show a loading toast indicating that the images are being analyzed
+    toast.loading("Analyzing mood board images...", {
+      id: "style-guide-generation",
+    });
+
+    try {
+      // Call the API to generate the style guide
+      const result = await generateStyleGuide({ projectId }).unwrap();
+
+      // If the result is not successful, show an error message
+      if (!result.success) {
+        toast.error(result.message, { id: "style-guide-generation" });
+        return;
+      }
+
+      // Refresh the page to get updated data (e.g., generated style guide)
+      router.refresh();
+
+      // Success toast
+      toast.success("Style guide generated successfully!", {
+        id: "style-guide-generation",
+      });
+
+      // Show a follow-up success message after a short delay
+      setTimeout(() => {
+        toast.success(
+          "Style guide generated! Switch to the Colours tab to see the results.",
+          { duration: 5000 }
+        );
+      }, 1000);
+    } catch (error) {
+      // If an error occurs, display an error toast
+      const errorMessage =
+        error && typeof error === "object" && "error" in error
+          ? (error as { error: string }).error
+          : "Failed to generate style guide";
+      toast.error(errorMessage, { id: "style-guide-generation" });
+    }
+  };
+
+  return {
+    handleGenerateStyleGuide,
+    handleUploadClick,
+    isGenerating,
+  };
+};
+
+export const useUpdateContainer = (shape: GeneratedUIShape) => {
+  const dispatch = useAppDispatch();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (containerRef.current && shape.uiSpecData) {
+      const timeoutId = setTimeout(() => {
+        const actualHeight = containerRef.current?.offsetHeight || 0;
+
+        if (actualHeight > 0 && Math.abs(actualHeight - shape.h) > 10) {
+          dispatch(
+            updateShape({
+              id: shape.id,
+              patch: { h: actualHeight },
+            })
+          );
+        }
+      }, 100);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [shape.uiSpecData, shape.id, shape.h, dispatch]);
+
+  const sanitizeHtml = (html: string) => {
+    const sanitized = html
+      // Remove <script> tags
+      .replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, "")
+      // Remove <iframe> tags
+      .replace(/<iframe\b[^>]*>([\s\S]*?)<\/iframe>/gi, "")
+      // Remove inline event handlers: on*
+      .replace(/\son\w+=(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+      // Remove javascript: protocol in href/src
+      .replace(/javascript:/gi, "")
+      // Remove data: protocol in href/src
+      .replace(/data:/gi, "");
+
+    return sanitized;
+  };
+  return { sanitizeHtml, containerRef};
+};
+

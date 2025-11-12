@@ -1,6 +1,6 @@
 "use client";
 
-import { useInfiniteCanvas } from "@/hooks/use-canvas";
+import { useInfiniteCanvas, useInspiration } from "@/hooks/use-canvas";
 import TextSidebar from "./text-sidebar";
 import { cn } from "@/lib/utils";
 import ShapeRenderer from "./shapes";
@@ -11,6 +11,7 @@ import { ArrowPreview } from "./shapes/arrow/preview";
 import { LinePreview } from "./shapes/line/preview";
 import { FreeDrawStrokePreview } from "./shapes/stroke/preview";
 import { SelectionOverlay } from "./shapes/selection";
+import InspirationSidebar from "./shapes/inspiration-sidebar";
 
 const InfiniteCanvas = () => {
   const {
@@ -30,12 +31,18 @@ const InfiniteCanvas = () => {
     selectedShapes,
   } = useInfiniteCanvas();
 
+
+  const {isInspirationOpen, closeInspiration, toggleInspiration, exportDesign} = useInspiration()
+
+  const {isChatOpen, activeGeneratedUIId, generateWorkflow} = useGlobalChat()
+
   const draftShape = getDraftShape();
   const selectionMarquee = getSelectionMarquee?.();
   const freeDrawPoints = getFreeDrawPoints();
   return (
     <>
       <TextSidebar isOpen={isSidebarOpen && hasSelectedText} />
+      <InspirationSidebar isOpen={isInspirationOpen} onClose={closeInspiration}/>
       <div
         ref={attachCanvasRef}
         role="application"
@@ -71,9 +78,10 @@ const InfiniteCanvas = () => {
             <ShapeRenderer
               key={shape.id}
               shape={shape}
-/*               toggleInspiration={toggleInspiration}
-              toggleChat={toggleChat}
+              toggleInspiration={toggleInspiration}
               generateWorkflow={generateWorkflow}
+/*               toggleChat={toggleChat}
+              
               exportDesign={exportDesign}
  */            />
           ))}

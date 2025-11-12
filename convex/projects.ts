@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
 export const getProject = query({
@@ -65,11 +66,11 @@ export const createProject = mutation({
   },
 });
 
-async function getNextProjectNumber(ctx: any, userId: string): Promise<number> {
+async function getNextProjectNumber(ctx: MutationCtx, userId: Id<"users">): Promise<number> {
   // Query for the user's project counter
   const counter = await ctx.db
     .query("project_counters") // Query the 'project_counters' collection
-    .withIndex("by_userId", (q: any) => q.eq("userId", userId)) // Use index 'by_userId' to find the counter for the user
+    .withIndex("by_userId", (q) => q.eq("userId", userId)) // Use index 'by_userId' to find the counter for the user
     .first(); // Fetch the first result (should be only one)
 
   // If no counter exists for the user, create one with the next project number set to 2
@@ -139,4 +140,67 @@ export const getProjectStyleGuide = query({
     return project.styleGuide ? JSON.parse(project.styleGuide) : null
   },
 })
+
+export const updateProjectSketches = mutation({
+  args: {
+    projectId: v.id('projects'),
+    sketchesData: v.any(),
+    viewportData: v.optional(v.any()),
+  },
+  handler: async (ctx, { projectId, sketchesData, viewportData }) => {
+    const project = await ctx.db.get(projectId)
+    if (!project) throw new Error('Project not found')
+
+    const updateData: {
+      sketchesData: unknown;
+      lastModified: number;
+      viewportData?: unknown;
+    } = {
+      sketchesData,
+      lastModified: Date.now(),
+    }
+
+    if (viewportData) {
+      updateData.viewportData = viewportData
+    }
+
+    // Continue with your database update logic...
+    await ctx.db.patch(projectId, updateData)
+    return { success: true }
+  },
+})
+
+export const updateProjectStyleGuide = mutation({
+  args: {
+    projectId: v.id('projects'),         // ID of the project to update
+    styleGuideData: v.any(),             // The AI-generated style guide in JSON format
+  },
+
+  handler: async (ctx, { projectId, styleGuideData }) => {
+    console.log('[Convex] Updating project style guide:', projectId);
+
+    // Retrieve the user ID from the authentication context
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error('Not authenticated');  // Ensure the user is authenticated
+
+    // Retrieve the project from the database
+    const project = await ctx.db.get(projectId);
+    if (!project) throw new Error('Project not found');  // If the project doesn't exist, throw an error
+
+    // Ensure the user has permission to update the project
+    if (project.userId !== userId) {
+      throw new Error('Access denied');  // The user can only update their own projects
+    }
+
+    // Update the project style guide in the database
+    await ctx.db.patch(projectId, {
+      styleGuide: JSON.stringify(styleGuideData),  // Store the style guide as a JSON string
+      lastModified: Date.now(),                    // Update the 'lastModified' timestamp
+    });
+
+    console.log('[Convex] Project style guide updated successfully');
+    
+    return { success: true, styleGuide: styleGuideData };  // Return the updated style guide
+  },
+});
 

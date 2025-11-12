@@ -1,17 +1,21 @@
+import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
+
 export interface ColorSwatch {
   name: string;
   hexColor: string;
   description?: string;
 }
 
+export type ColorSectionTitle =
+  | "Primary Colours"
+  | "Secondary & Accent Colors"
+  | "UI Component Colors"
+  | "Utility & Form Colors"
+  | "Status & Feedback Colors";
+
 export interface ColorSection {
-  title:
-    | "Primary Colours"
-    | "Secondary & Accent Colors"
-    | "UI Component Colors"
-    | "Utility & Form Colors"
-    | "Status & Feedback Colors";
-  swatches: ColorSwatch[]; // Array of ColorSwatch
+  title: ColorSectionTitle;
+  swatches: ColorSwatch[];
 }
 
 export interface TypographyStyle {
@@ -28,20 +32,45 @@ export interface TypographySection {
   styles: TypographyStyle[];
 }
 
-export interface ColorSection {
-  name: string;
-  colors: string[]; // hex codes or color names
-}
-
 export interface StyleGuide {
   theme: string;
   description: string;
-  colorSections: [
-    ColorSection,
-    ColorSection,
-    ColorSection,
-    ColorSection,
-    ColorSection
-  ]; // array of ColorSection
-  typographySections: TypographySection[]; // array of TypographySection
+  colorSections: ColorSection[];
+  typographySections: TypographySection[];
 }
+
+export interface GenerateStyleGuideRequest {
+  projectId: string;
+}
+
+export interface GenerateStyleGuideResponse {
+  success: boolean;
+  styleGuide: StyleGuide;
+  message: string;
+}
+
+export const styleGuideApi = createApi({
+  reducerPath: 'styleGuideApi',
+  baseQuery: fetchBaseQuery({
+    baseUrl: '/api/generate', // Make sure this endpoint is correct
+  }),
+  tagTypes: ['StyleGuide'],
+  endpoints: (builder) => ({
+    generateStyleGuide: builder.mutation<
+      GenerateStyleGuideResponse, // Define the expected response type
+      GenerateStyleGuideRequest // Define the request body type
+    >({
+      query: ({ projectId }) => ({
+        url: '/style', // The endpoint for generating the style guide
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json', // Corrected header value
+        },
+        body: { projectId }, // Send the projectId in the request body
+      }),
+      invalidatesTags: ['StyleGuide'], // Invalidate the 'StyleGuide' tag for cache invalidation
+    }),
+  }),
+});
+
+export const { useGenerateStyleGuideMutation } = styleGuideApi; // Export hook for usage in components
