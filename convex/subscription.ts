@@ -21,8 +21,8 @@ export const hasEntitlement = query({
       const periodOk =
         sub.currentPeriodEnd == null || sub.currentPeriodEnd > now;
 
-      // If the subscription is active and the period is still valid, return true
-      if (status === "active" && periodOk) {
+      // If the subscription is entitled and the period is still valid, return true
+      if (ENTITLED.has(status) && periodOk) {
         return true;
       }
     }
@@ -140,23 +140,18 @@ export const upsertFromPolar = mutation({
       }
 
       // Polar subscription belongs to different user
-      const userExistingSubscription = await ctx.db
-        .query("subscriptions")
-        .withIndex("by_userId", q => q.eq("userId", args.userId))
-        .first();
-
-      if (userExistingSubscription) {
+      if (existingByUser) {
         const preservedData = {
-          creditsBalance: userExistingSubscription.creditsBalance,
-          lastGrantCursor: userExistingSubscription.lastGrantCursor
+          creditsBalance: existingByUser.creditsBalance,
+          lastGrantCursor: existingByUser.lastGrantCursor
         };
 
-        await ctx.db.patch(userExistingSubscription._id, {
+        await ctx.db.patch(existingByUser._id, {
           ...base,
           ...preservedData
         });
 
-        return userExistingSubscription._id;
+        return existingByUser._id;
       }
 
       // User doesn't have any subscription yet

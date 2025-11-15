@@ -22,12 +22,12 @@ const ZoomBar = () => {
 
   return (
     <div className="col-span-1 flex justify-end items-center">
-      <div className="flex items-center gap-1 backdrop-blur-xl bg-white/8 border border-white/50 rounded-full p-3 saturate-150">
+      <div className="flex items-center gap-1 bg-neutral-900/80 border border-white/16 rounded-full p-3 saturate-150">
         <Button
           variant="ghost"
-          size="lg"
+          size="sm"
           onClick={handleZoomOut}
-          className="w-9 h-9 p-0 rounded-full cursor-pointer hover:bg-white/12 border border-transparent hover:border-white/16 transition-all pointer-events-auto"
+          className="w-9 h-9 p-0 rounded-full cursor-pointer hover:bg-neutral-800 border border-transparent hover:border-white/20 transition-all pointer-events-auto"
           title="Zoom Out"
         >
           <ZoomOut className="w-4 h-4 text-primary/50" />
@@ -39,7 +39,7 @@ const ZoomBar = () => {
           variant="ghost"
           size="sm"
           onClick={handleZoomIn}
-          className="w-9 h-9 p-0 rounded-full cursor-pointer hover:bg-white/12 border border-transparent hover:border-white/16 transition-all pointer-events-auto"
+          className="w-9 h-9 p-0 rounded-full cursor-pointer hover:bg-neutral-800 border border-transparent hover:border-white/20 transition-all pointer-events-auto"
           title="Zoom In"
         >
           <ZoomIn className="w-4 h-4 text-primary/50" />

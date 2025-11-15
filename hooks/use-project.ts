@@ -5,11 +5,13 @@ import {
   addProject,
   createProjectSuccess,
   createProjectFailure,
+  updateProject,
+  removeProject,
 } from "@/redux/slice/projects";
 import { toast } from "sonner";
 import { Id } from "@/convex/_generated/dataModel";
 import { api } from "@/convex/_generated/api";
-import { fetchMutation } from "convex/nextjs";
+import { useMutation } from "convex/react";
 
 const generateGradientThumbnail = () => {
   const gradients = [
@@ -48,9 +50,12 @@ const generateGradientThumbnail = () => {
 
 export const useProjectCreation = () => {
   const dispatch = useAppDispatch();
+  const createProjectMutation = useMutation(api.projects.createProject);
+  const updateProjectMetaMutation = useMutation(api.projects.updateProjectMeta);
+  const deleteProjectMutation = useMutation(api.projects.deleteProject);
 
   // Get user info from profile
-  const user = useAppSelector((state) => state.profile);
+  const user = useAppSelector((state) => state.profile.user);
 
   // Get project-related state from Redux store
   const projectsState = useAppSelector((state) => state.projects);
@@ -85,7 +90,7 @@ export const useProjectCreation = () => {
         frameCounter: 0,
       };
 
-      const result = await fetchMutation(api.projects.createProject, {
+      const result = await createProjectMutation({
         userId: user.id as Id<"users">, 
         name: name || undefined, 
         sketchesData: shapesData,
@@ -109,8 +114,87 @@ export const useProjectCreation = () => {
     }
   };
 
+  const renameProject = async (projectId: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      toast.error("Project name cannot be empty");
+      return;
+    }
+    if (!user?.id) {
+      toast.error("User is not authenticated");
+      return;
+    }
+
+    try {
+      await updateProjectMetaMutation({
+        projectId: projectId as Id<"projects">,
+        name: trimmed,
+      });
+
+      dispatch(
+        updateProject({
+          _id: projectId,
+          name: trimmed,
+          lastModified: Date.now(),
+        })
+      );
+      toast.success("Project renamed");
+    } catch (err) {
+      console.error("Failed to rename project", err);
+      toast.error("Failed to rename project");
+    }
+  };
+
+  const archiveProject = async (projectId: string, archived: boolean) => {
+    if (!user?.id) {
+      toast.error("User is not authenticated");
+      return;
+    }
+
+    try {
+      await updateProjectMetaMutation({
+        projectId: projectId as Id<"projects">,
+        archived,
+      });
+
+      dispatch(
+        updateProject({
+          _id: projectId,
+          archived,
+          lastModified: Date.now(),
+        })
+      );
+      toast.success(archived ? "Project archived" : "Project unarchived");
+    } catch (err) {
+      console.error("Failed to update project archive state", err);
+      toast.error("Failed to update project");
+    }
+  };
+
+  const deleteProject = async (projectId: string) => {
+    if (!user?.id) {
+      toast.error("User is not authenticated");
+      return;
+    }
+
+    try {
+      await deleteProjectMutation({
+        projectId: projectId as Id<"projects">,
+      });
+
+      dispatch(removeProject(projectId));
+      toast.success("Project deleted");
+    } catch (err) {
+      console.error("Failed to delete project", err);
+      toast.error("Failed to delete project");
+    }
+  };
+
   return {
     createProject,
+    renameProject,
+    archiveProject,
+    deleteProject,
     isCreating: projectsState.isCreating, // Whether a project is being created
     projects: projectsState.projects, // List of projects
     projectsTotal: projectsState.total, // Total number of projects

@@ -12,7 +12,7 @@ import { useAppDispatch, useAppSelector } from "@/redux/store";
 import { TextShape, updateShape } from "@/redux/slice/shapes";
 import { Slider } from "@/components/ui/slider";
 import { Toggle } from "@/components/ui/toggle";
-import { useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import {
   AlignCenter,
   AlignLeft,
@@ -29,6 +29,25 @@ import { Textarea } from "@/components/ui/textarea";
 type Props = {
   isOpen: boolean;
 };
+const DECORATION_VALUE_MAP: Record<string, TextShape["textDecoration"]> = {
+  underline: "underline",
+  "line-through": "line-through",
+  "line-through underline": "line-through underline",
+};
+
+const getDecorationTokens = (value?: string | null): Array<
+  "underline" | "line-through"
+> => {
+  if (!value) return [];
+  return value
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(
+      (token): token is "underline" | "line-through" =>
+        token === "underline" || token === "line-through"
+    );
+};
+
 const TextSidebar = ({ isOpen }: Props) => {
   const dispatch = useAppDispatch();
   const selectedShapes = useAppSelector((state) => state.shapes.selected);
@@ -57,6 +76,8 @@ const TextSidebar = ({ isOpen }: Props) => {
   const [colorInput, setColorInput] = useState(
     selectedTextShape?.fill || "#ffffff"
   );
+  const previousFontWeightRef = useRef<number | null>(null);
+  const activeShapeIdRef = useRef<string | null>(null);
 
   const fontFamilies = [
     "Inter, sans-serif",
@@ -66,6 +87,29 @@ const TextSidebar = ({ isOpen }: Props) => {
     "Verdana, sans-serif",
   ];
 
+  useEffect(() => {
+    const nextColor = selectedTextShape?.fill || "#ffffff";
+    startTransition(() => {
+      setColorInput(nextColor);
+    });
+  }, [selectedTextShape?.id, selectedTextShape?.fill]);
+
+  useEffect(() => {
+    if (!selectedTextShape) {
+      activeShapeIdRef.current = null;
+      previousFontWeightRef.current = null;
+      return;
+    }
+    activeShapeIdRef.current = selectedTextShape.id;
+    if (selectedTextShape.fontWeight < 600) {
+      previousFontWeightRef.current = selectedTextShape.fontWeight;
+    }
+  }, [selectedTextShape?.id, selectedTextShape?.fontWeight, selectedTextShape]);
+
+  const decorationTokens = getDecorationTokens(
+    selectedTextShape?.textDecoration
+  );
+
   // Handle color change with validation
   const handleColorChange = (color: string) => {
     setColorInput(color);
@@ -74,13 +118,53 @@ const TextSidebar = ({ isOpen }: Props) => {
     }
   };
 
+  const handleFontWeightToggle = (pressed: boolean) => {
+    if (!selectedTextShape) return;
+    if (pressed) {
+      if (selectedTextShape.fontWeight < 600) {
+        previousFontWeightRef.current = selectedTextShape.fontWeight;
+      }
+      updateTextProperty("fontWeight", 700);
+      return;
+    }
+    const fallbackWeight =
+      previousFontWeightRef.current !== null
+        ? previousFontWeightRef.current
+        : 400;
+    updateTextProperty("fontWeight", fallbackWeight);
+  };
+
+  const handleTextDecorationToggle = (
+    token: "underline" | "line-through",
+    pressed: boolean
+  ) => {
+    if (!selectedTextShape) return;
+    const currentTokens = new Set(
+      getDecorationTokens(selectedTextShape.textDecoration)
+    );
+    if (pressed) {
+      currentTokens.add(token);
+    } else {
+      currentTokens.delete(token);
+    }
+    const nextTokens = Array.from(currentTokens).sort();
+    const combinationKey = nextTokens.join(" ");
+    const nextValue = combinationKey
+      ? DECORATION_VALUE_MAP[combinationKey] ?? "none"
+      : "none";
+    updateTextProperty(
+      "textDecoration",
+      nextValue as TextShape["textDecoration"]
+    );
+  };
+
   if (!isOpen || !selectedTextShape) return null;
 
   return (
     <div
       key={selectedTextShape.id}
       className={cn(
-        "fixed right-5 top-1/2 transform -translate-y-1/2 w-80 backdrop-blur-xl bg-white/8 border-white/12 gap-2 p-3 saturate-150 border rounded-lg z-50 transition-transform duration-300",
+        "fixed right-5 top-1/2 transform -translate-y-1/2 w-80 bg-neutral-900/80 border-white/16 gap-2 p-3 saturate-150 border rounded-lg z-50 transition-transform duration-300",
         isOpen ? "translate-x-0" : "translate-x-full"
       )}
     >
@@ -138,9 +222,7 @@ const TextSidebar = ({ isOpen }: Props) => {
           <div className="flex gap-2">
             <Toggle
               pressed={selectedTextShape.fontWeight >= 600}
-              onPressedChange={(pressed) =>
-                updateTextProperty("fontWeight", pressed ? 700 : 400)
-              }
+              onPressedChange={handleFontWeightToggle}
               className="data-[state=on]:bg-blue-500 data-[state=on]:text-white"
             >
               <Bold className="w-4 h-4" />
@@ -155,31 +237,24 @@ const TextSidebar = ({ isOpen }: Props) => {
               <Italic className="w-4 h-4" />
             </Toggle>
             <Toggle
-              pressed={selectedTextShape.textDecoration === "underline"}
+              pressed={decorationTokens.includes("underline")}
               onPressedChange={(pressed) =>
-                updateTextProperty(
-                  "textDecoration",
-                  pressed ? "underline" : "none"
-                )
+                handleTextDecorationToggle("underline", pressed)
               }
               className="data-[state=on]:bg-blue-500 data-[state=on]:text-white"
             >
               <Underline className="w-4 h-4" />
             </Toggle>
             <Toggle
-              pressed={selectedTextShape.textDecoration === "line-through"}
+              pressed={decorationTokens.includes("line-through")}
               onPressedChange={(pressed) =>
-                updateTextProperty(
-                  "textDecoration",
-                  pressed ? "line-through" : "none"
-                )
+                handleTextDecorationToggle("line-through", pressed)
               }
               className="data-[state=on]:bg-blue-500 data-[state=on]:text-white"
             >
               <Strikethrough className="w-4 h-4" />
             </Toggle>
           </div>
-          <div className="flex gap-2"></div>
         </div>
         {/* Alignment */}
         <div className="space-y-3">

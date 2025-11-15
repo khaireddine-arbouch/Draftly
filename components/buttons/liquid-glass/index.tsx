@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 interface LiquidGlassButtonProps {
   children: React.ReactNode;
-  onClick?: (e?: React.MouseEvent<HTMLButtonElement>) => void;
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   className?: string;
   size?: "sm" | "md" | "lg";
   variant?: "default" | "subtle";
@@ -35,7 +35,7 @@ export const LiquidGlassButton: React.FC<LiquidGlassButtonProps> = ({
 
   return (
     <button
-      onClick={onClick}
+      onClick={(e) => onClick?.(e)}
       disabled={disabled}
       style={style}
       className={cn(

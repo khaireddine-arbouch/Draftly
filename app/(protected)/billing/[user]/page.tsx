@@ -10,12 +10,12 @@ import {
 } from "@/components/ui/card";
 import { Check, Code, Download, Palette, Sparkles, Zap } from "lucide-react";
 
-const Page = () => {
+const Page = ({ params }: { params: { user: string } }) => {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-lg">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-linear-to-r from-primary to-primary/60 rounded-full mb-4 shadow-lg">
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-r from-primary to-primary/60 rounded-full mb-4 shadow-lg">
             <Sparkles className="w-6 h-6 text-primary-foreground" />
           </div>
 
@@ -39,12 +39,12 @@ const Page = () => {
 
             <CardTitle>Standard Plan</CardTitle>
             <div className="flex items-baseline justify-center gap-2">
-              <span className="text-4xl font-bold text-foreground">$9.99</span>
+              <span className="text-4xl font-bold text-foreground">$20</span>
               <span className="text-muted-foreground text-base">/month</span>
             </div>
             <CardDescription className="text-muted-foreground text-sm mt-2">
               Get 10 credits every month to power your AI-assisted design
-              workflow I
+              workflow
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 px-6">

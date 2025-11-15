@@ -1,7 +1,7 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
-// Define the ProjectSummary type based on your provided structure
-interface ProjectSummary {
+// Project summary type used in Redux state
+export interface ProjectSummary {
   _id: string;
   name: string;
   projectNumber: number;
@@ -9,14 +9,8 @@ interface ProjectSummary {
   lastModified: number;
   createdAt: number;
   isPublic?: boolean;
-}
-
-// Define your project type (you might already have this defined)
-interface ProjectSummary {
-  _id: string;
-  name: string;
   description?: string;
-  // Add any other project fields
+  archived?: boolean;
 }
 
 interface ProjectsState {
@@ -77,7 +71,10 @@ const projectsSlice = createSlice({
       state.total += 1;
     },
     // Update Project
-    updateProject: (state, action: PayloadAction<ProjectSummary>) => {
+    updateProject: (
+      state,
+      action: PayloadAction<{ _id: string } & Partial<ProjectSummary>>
+    ) => {
       const index = state.projects.findIndex(
         (project) => project._id === action.payload._id
       );

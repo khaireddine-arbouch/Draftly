@@ -4,6 +4,7 @@ import {
   nanoid,
   PayloadAction,
   EntityState,
+  current,
 } from "@reduxjs/toolkit";
 import type { Point } from "../viewport";
 
@@ -31,6 +32,7 @@ export interface FrameShape extends BaseShape {
   w: number;
   h: number;
   frameNumber: number;
+  name?: string;
 }
 export interface RectShape extends BaseShape {
   type: "rect";
@@ -74,7 +76,11 @@ export interface TextShape extends BaseShape {
   fontWeight: number;
   fontStyle: "normal" | "italic";
   textAlign: "left" | "center" | "right";
-  textDecoration: "none" | "underline" | "line-through";
+  textDecoration:
+    | "none"
+    | "underline"
+    | "line-through"
+    | "line-through underline";
   lineHeight: number;
   letterSpacing: number;
   textTransform: "none" | "uppercase" | "lowercase" | "capitalize";
@@ -105,15 +111,63 @@ const shapesAdapter = createEntityAdapter<Shape, string>({
   selectId: (s) => s.id,
 });
 
+const MAX_HISTORY = 100;
+
+type ShapesSnapshot = {
+  shapes: EntityState<Shape, string>;
+  frameCounter: number;
+};
+
+const pushWithLimit = (history: ShapesSnapshot[], snapshot: ShapesSnapshot) => {
+  history.push(snapshot);
+  if (history.length > MAX_HISTORY) {
+    history.splice(0, history.length - MAX_HISTORY);
+  }
+};
+
+const applySnapshot = (state: ShapesState, snapshot: ShapesSnapshot) => {
+  Object.assign(state.shapes, snapshot.shapes);
+  state.frameCounter = snapshot.frameCounter;
+};
+
+const recordSnapshot = (state: ShapesState) => {
+  const now = Date.now();
+  const last = state.lastSnapshotAt ?? 0;
+  // Throttle snapshots to at most ~1 per 800ms to make undo/redo smoother
+  if (now - last < 800) return;
+  const snapshot: ShapesSnapshot = {
+    shapes: current(state.shapes) as EntityState<Shape, string>,
+    frameCounter: state.frameCounter,
+  };
+  pushWithLimit(state.past, snapshot);
+  state.future = [];
+  state.lastSnapshotAt = now;
+};
+
+const pushSnapshotImmediate = (state: ShapesState) => {
+  const now = Date.now();
+  const snapshot: ShapesSnapshot = {
+    shapes: current(state.shapes) as EntityState<Shape, string>,
+    frameCounter: state.frameCounter,
+  };
+  pushWithLimit(state.past, snapshot);
+  state.future = [];
+  state.lastSnapshotAt = now;
+};
+
 type SelectionMap = Record<string, true>;
+
+type GenerationStatus = "idle" | "generating" | "ready" | "error";
 
 interface ShapesState {
   tool: Tool;
   shapes: EntityState<Shape, string>;
   selected: SelectionMap;
   frameCounter: number;
-  past: Array<{ shapes: EntityState<Shape, string>; frameCounter: number }>;
-  future: Array<{ shapes: EntityState<Shape, string>; frameCounter: number }>;
+  past: ShapesSnapshot[];
+  future: ShapesSnapshot[];
+  generationStatus: Record<string, GenerationStatus>;
+  lastSnapshotAt?: number;
 }
 
 const initialState: ShapesState = {
@@ -123,6 +177,8 @@ const initialState: ShapesState = {
   frameCounter: 0,
   past: [],
   future: [],
+  generationStatus: {},
+  lastSnapshotAt: 0,
 };
 
 const DEFAULTS = { stroke: "#ffff", strokeWidth: 2 as const };
@@ -136,6 +192,7 @@ const makeFrame = (p: {
   stroke?: string;
   strokeWidth?: number;
   fill?: string | null;
+  name?: string;
 }): FrameShape => ({
   id: nanoid(),
   type: "frame",
@@ -144,6 +201,8 @@ const makeFrame = (p: {
   w: p.w,
   h: p.h,
   frameNumber: p.frameNumber,
+  // Default name uses the frame number; can be overridden.
+  name: p.name ?? `Frame ${p.frameNumber}`,
   stroke: "transparent",
   strokeWidth: 0,
   fill: p.fill ?? "rgba(255, 255, 255, 0.05)",
@@ -252,7 +311,11 @@ const makeText = (p: {
   fontWeight?: number;
   fontStyle?: "normal" | "italic";
   textAlign?: "left" | "center" | "right";
-  textDecoration?: "none" | "underline" | "line-through";
+  textDecoration?:
+    | "none"
+    | "underline"
+    | "line-through"
+    | "line-through underline";
   lineHeight?: number;
   letterSpacing?: number;
   textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
@@ -312,26 +375,24 @@ const shapesSlice = createSlice({
   reducers: {
     undo(state) {
       if (state.past.length === 0) return;
-      const currentSnapshot = {
-        shapes: JSON.parse(JSON.stringify(state.shapes)) as EntityState<Shape, string>,
+      const currentSnapshot: ShapesSnapshot = {
+        shapes: current(state.shapes) as EntityState<Shape, string>,
         frameCounter: state.frameCounter,
       };
-      state.future.push(currentSnapshot);
+      pushWithLimit(state.future, currentSnapshot);
       const prev = state.past.pop()!;
-      state.shapes = prev.shapes as unknown as EntityState<Shape, string>;
-      state.frameCounter = prev.frameCounter;
+      applySnapshot(state, prev);
       state.selected = {};
     },
     redo(state) {
       if (state.future.length === 0) return;
-      const currentSnapshot = {
-        shapes: JSON.parse(JSON.stringify(state.shapes)) as EntityState<Shape, string>,
+      const currentSnapshot: ShapesSnapshot = {
+        shapes: current(state.shapes) as EntityState<Shape, string>,
         frameCounter: state.frameCounter,
       };
-      state.past.push(currentSnapshot);
+      pushWithLimit(state.past, currentSnapshot);
       const next = state.future.pop()!;
-      state.shapes = next.shapes as unknown as EntityState<Shape, string>;
-      state.frameCounter = next.frameCounter;
+      applySnapshot(state, next);
       state.selected = {};
     },
     setTool(state, action: PayloadAction<Tool>) {
@@ -345,11 +406,7 @@ const shapesSlice = createSlice({
         Omit<Parameters<typeof makeFrame>[0], "frameNumber">
       >
     ) {
-      state.past.push({
-        shapes: JSON.parse(JSON.stringify(state.shapes)) as EntityState<Shape, string>,
-        frameCounter: state.frameCounter,
-      });
-      state.future = [];
+      recordSnapshot(state);
       state.frameCounter += 1;
       const frameWithNumber = {
         ...action.payload,
@@ -358,22 +415,14 @@ const shapesSlice = createSlice({
       shapesAdapter.addOne(state.shapes, makeFrame(frameWithNumber));
     },
     addRect(state, action: PayloadAction<Parameters<typeof makeRect>[0]>) {
-      state.past.push({
-        shapes: JSON.parse(JSON.stringify(state.shapes)) as EntityState<Shape, string>,
-        frameCounter: state.frameCounter,
-      });
-      state.future = [];
+      recordSnapshot(state);
       shapesAdapter.addOne(state.shapes, makeRect(action.payload));
     },
     addEllipse(
       state,
       action: PayloadAction<Parameters<typeof makeEllipse>[0]>
     ) {
-      state.past.push({
-        shapes: JSON.parse(JSON.stringify(state.shapes)) as EntityState<Shape, string>,
-        frameCounter: state.frameCounter,
-      });
-      state.future = [];
+      recordSnapshot(state);
       shapesAdapter.addOne(state.shapes, makeEllipse(action.payload));
     },
     addFreeDrawShape(
@@ -382,46 +431,26 @@ const shapesSlice = createSlice({
     ) {
       const { points } = action.payload;
       if (!points || points.length === 0) return;
-      state.past.push({
-        shapes: JSON.parse(JSON.stringify(state.shapes)) as EntityState<Shape, string>,
-        frameCounter: state.frameCounter,
-      });
-      state.future = [];
+      recordSnapshot(state);
       shapesAdapter.addOne(state.shapes, makeFree(action.payload));
     },
     addArrow(state, action: PayloadAction<Parameters<typeof makeArrow>[0]>) {
-      state.past.push({
-        shapes: JSON.parse(JSON.stringify(state.shapes)) as EntityState<Shape, string>,
-        frameCounter: state.frameCounter,
-      });
-      state.future = [];
+      recordSnapshot(state);
       shapesAdapter.addOne(state.shapes, makeArrow(action.payload));
     },
     addLine(state, action: PayloadAction<Parameters<typeof makeLine>[0]>) {
-      state.past.push({
-        shapes: JSON.parse(JSON.stringify(state.shapes)) as EntityState<Shape, string>,
-        frameCounter: state.frameCounter,
-      });
-      state.future = [];
+      recordSnapshot(state);
       shapesAdapter.addOne(state.shapes, makeLine(action.payload));
     },
     addText(state, action: PayloadAction<Parameters<typeof makeText>[0]>) {
-      state.past.push({
-        shapes: JSON.parse(JSON.stringify(state.shapes)) as EntityState<Shape, string>,
-        frameCounter: state.frameCounter,
-      });
-      state.future = [];
+      recordSnapshot(state);
       shapesAdapter.addOne(state.shapes, makeText(action.payload));
     },
     addGeneratedUI(
       state,
       action: PayloadAction<Parameters<typeof makeGeneratedUI>[0]>
     ) {
-      state.past.push({
-        shapes: JSON.parse(JSON.stringify(state.shapes)) as EntityState<Shape, string>,
-        frameCounter: state.frameCounter,
-      });
-      state.future = [];
+      recordSnapshot(state);
       shapesAdapter.addOne(state.shapes, makeGeneratedUI(action.payload));
     },
 
@@ -430,38 +459,135 @@ const shapesSlice = createSlice({
       action: PayloadAction<{ id: string; patch: Partial<Shape> }>
     ) {
       const { id, patch } = action.payload;
-      state.past.push({
-        shapes: JSON.parse(JSON.stringify(state.shapes)) as EntityState<Shape, string>,
-        frameCounter: state.frameCounter,
-      });
-      state.future = [];
+      recordSnapshot(state);
       shapesAdapter.updateOne(state.shapes, { id, changes: patch });
+    },
+
+    // Update without recording a snapshot; used for continuous interactions (drag/resize).
+    updateShapeNoHistory(
+      state,
+      action: PayloadAction<{ id: string; patch: Partial<Shape> }>
+    ) {
+      const { id, patch } = action.payload;
+      shapesAdapter.updateOne(state.shapes, { id, changes: patch });
+    },
+
+    // Force pushing a history checkpoint (no throttle)
+    commitHistory(state) {
+      pushSnapshotImmediate(state);
     },
 
     removeShape(state, action: PayloadAction<string>) {
       const id = action.payload;
-      state.past.push({
-        shapes: JSON.parse(JSON.stringify(state.shapes)) as EntityState<Shape, string>,
-        frameCounter: state.frameCounter,
-      });
-      state.future = [];
+      recordSnapshot(state);
       const shape = state.shapes.entities[id];
       if (shape?.type === "frame") {
         state.frameCounter = Math.max(0, state.frameCounter - 1);
       }
       shapesAdapter.removeOne(state.shapes, id);
       delete state.selected[id];
+      delete state.generationStatus[id];
+    },
+
+    duplicateShapes(
+      state,
+      action: PayloadAction<{
+        ids: string[];
+        offset?: { dx: number; dy: number };
+      }>
+    ) {
+      const { ids, offset } = action.payload;
+      if (!ids.length) return;
+
+      recordSnapshot(state);
+
+      const dx = offset?.dx ?? 24;
+      const dy = offset?.dy ?? 24;
+
+      const newSelected: SelectionMap = {};
+
+      for (const id of ids) {
+        const original = state.shapes.entities[id];
+        if (!original) continue;
+
+        let cloned: Shape | null = null;
+
+        switch (original.type) {
+          case "frame": {
+            state.frameCounter += 1;
+            const newFrameNumber = state.frameCounter;
+            cloned = {
+              ...original,
+              id: nanoid(),
+              x: original.x + dx,
+              y: original.y + dy,
+              frameNumber: newFrameNumber,
+              name: original.name ?? `Frame ${newFrameNumber}`,
+            };
+            break;
+          }
+          case "rect":
+          case "ellipse":
+          case "generatedui": {
+            cloned = {
+              ...original,
+              id: nanoid(),
+              x: original.x + dx,
+              y: original.y + dy,
+            } as Shape;
+            break;
+          }
+          case "text": {
+            cloned = {
+              ...original,
+              id: nanoid(),
+              x: original.x + dx,
+              y: original.y + dy,
+            };
+            break;
+          }
+          case "freedraw": {
+            cloned = {
+              ...original,
+              id: nanoid(),
+              points: original.points.map((p) => ({
+                x: p.x + dx,
+                y: p.y + dy,
+              })),
+            };
+            break;
+          }
+          case "arrow":
+          case "line": {
+            cloned = {
+              ...original,
+              id: nanoid(),
+              startX: original.startX + dx,
+              startY: original.startY + dy,
+              endX: original.endX + dx,
+              endY: original.endY + dy,
+            };
+            break;
+          }
+        }
+
+        if (cloned) {
+          shapesAdapter.addOne(state.shapes, cloned);
+          newSelected[cloned.id] = true;
+        }
+      }
+
+      if (Object.keys(newSelected).length) {
+        state.selected = newSelected;
+      }
     },
 
     clearAll(state) {
-      state.past.push({
-        shapes: JSON.parse(JSON.stringify(state.shapes)) as EntityState<Shape, string>,
-        frameCounter: state.frameCounter,
-      });
-      state.future = [];
+      recordSnapshot(state);
       shapesAdapter.removeAll(state.shapes);
       state.selected = {};
       state.frameCounter = 0;
+      state.generationStatus = {};
     },
 
     selectShape(state, action: PayloadAction<string>) {
@@ -480,11 +606,7 @@ const shapesSlice = createSlice({
     deleteSelected(state) {
       const ids = Object.keys(state.selected);
       if (ids.length) {
-        state.past.push({
-          shapes: JSON.parse(JSON.stringify(state.shapes)) as EntityState<Shape, string>,
-          frameCounter: state.frameCounter,
-        });
-        state.future = [];
+        recordSnapshot(state);
       }
       if (ids.length) shapesAdapter.removeMany(state.shapes, ids);
       state.selected = {};
@@ -496,6 +618,7 @@ const shapesSlice = createSlice({
         tool: Tool;
         selected: SelectionMap;
         frameCounter: number;
+        generationStatus?: Record<string, GenerationStatus>;
       }>
     ) {
       // Load project data into the shapes state
@@ -503,6 +626,18 @@ const shapesSlice = createSlice({
       state.tool = action.payload.tool;
       state.selected = action.payload.selected;
       state.frameCounter = action.payload.frameCounter;
+      state.generationStatus =
+        action.payload.generationStatus ?? {};
+    },
+    setGenerationStatus(
+      state,
+      action: PayloadAction<{
+        shapeId: string;
+        status: GenerationStatus;
+      }>
+    ) {
+      state.generationStatus[action.payload.shapeId] =
+        action.payload.status;
     },
   },
 });
@@ -520,6 +655,9 @@ export const {
   addText,
   addGeneratedUI,
   updateShape,
+  updateShapeNoHistory,
+  commitHistory,
+  duplicateShapes,
   removeShape,
   clearAll,
   selectShape,
@@ -528,6 +666,7 @@ export const {
   selectAll,
   deleteSelected,
   loadProject,
+  setGenerationStatus,
 } = shapesSlice.actions;
 
 export default shapesSlice.reducer;

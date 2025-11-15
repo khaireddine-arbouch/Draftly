@@ -9,11 +9,12 @@ interface AutosaveProjectRequest {
     tool: string;
     selected: Record<string, unknown>;
     frameCounter: number;
-  }
+  };
   viewportData?: {
     scale: number;
     translate: { x: number; y: number };
-  }
+  };
+  thumbnail?: string;
 }
 
 // Response interface for autosave API response

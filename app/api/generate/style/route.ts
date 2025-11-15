@@ -1,7 +1,8 @@
 import {
-    ConsumeCreditsQuery,
+  ConsumeCreditsQuery,
   CreditsBalanceQuery,
   MoodBoardImagesQuery,
+  RefundCreditsQuery,
 } from "@/app/convex/query.config";
 import { MoodBoardImage } from "@/hooks/use-styles";
 import { prompts } from "@/prompts";
@@ -9,10 +10,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { fetchMutation } from "convex/nextjs";
-import { Id } from "@/convex/_generated/dataModel";
 import { api } from "@/convex/_generated/api";
 import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 import { anthropic } from "@ai-sdk/anthropic";
+import { Id } from "@/convex/_generated/dataModel";
 
 // Reusing the previously defined ColorSwatchSchema
 const ColorSwatchSchema = z.object({
@@ -81,6 +82,14 @@ const StyleGuideSchema = z.object({
   typographySections: z.array(TypographySectionSchema).length(3),
 });
 
+const ProjectIdSchema = z
+  .string()
+  .regex(/^[a-z0-9_-]{15,40}$/i, "Invalid project ID format");
+
+const isProjectId = (value: unknown): value is Id<"projects"> => {
+  return ProjectIdSchema.safeParse(value).success;
+};
+
 export async function POST(request: NextRequest) {
   try {
     // Parse the request body
@@ -91,6 +100,13 @@ export async function POST(request: NextRequest) {
     if (!projectId) {
       return NextResponse.json(
         { error: "Project ID is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!isProjectId(projectId)) {
+      return NextResponse.json(
+        { error: "Invalid project ID" },
         { status: 400 }
       );
     }
@@ -115,8 +131,13 @@ export async function POST(request: NextRequest) {
     }
 
     const moodBoardImages = await MoodBoardImagesQuery(projectId);
+    const imagesValue = moodBoardImages.images?._valueJSON;
 
-    if (!moodBoardImages || moodBoardImages.images._valueJSON.length === 0) {
+    if (
+      !imagesValue ||
+      !Array.isArray(imagesValue) ||
+      imagesValue.length === 0
+    ) {
       return NextResponse.json(
         {
           error:
@@ -126,8 +147,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const images =
-      (moodBoardImages.images._valueJSON as unknown as MoodBoardImage[]) || [];
+    const images = imagesValue as unknown as MoodBoardImage[];
     const imageUrls = images
       .map((img) => img.url)
       .filter((url): url is string => typeof url === "string" && url.length > 0);
@@ -145,47 +165,88 @@ export async function POST(request: NextRequest) {
     const userPrompt = `Analyze these ${imageParts.length} mood board images and generate a design system: Extract colors that work harmoniously together and create typography that matches the aesthetic.
 Return ONLY the JSON object matching the exact schema structure above.`;
 
-    const result = await generateObject({
-      model: anthropic("claude-sonnet-4-20250514"),
-      schema: StyleGuideSchema,
-      system: systemPrompt, // Your system prompt for generating the style guide
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: userPrompt, // Assuming userPrompt is a string containing the user's request
-            },
-            ...imageParts.map((url) => ({
-              type: "image" as const,
-              image: url,
-            })),
-          ],
-        },
-      ],
-    });
-    const { ok, balance } = await ConsumeCreditsQuery({ amount: 1 });
-    if (!ok) {
+    const consumeResult = await ConsumeCreditsQuery({ amount: 1 });
+
+    if (!consumeResult.ok) {
+      const status =
+        typeof consumeResult.balance === "number" &&
+        consumeResult.balance <= 0
+          ? 402
+          : 500;
       return NextResponse.json(
-        { error: "Failed to generate style guide" },
+        {
+          error:
+            status === 402
+              ? "Insufficient credits"
+              : "Unable to reserve credits for generation",
+        },
+        { status }
+      );
+    }
+
+    let result;
+    try {
+      result = await generateObject({
+        model: anthropic("claude-sonnet-4-20250514"),
+        schema: StyleGuideSchema,
+        system: systemPrompt, // Your system prompt for generating the style guide
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: userPrompt, // Assuming userPrompt is a string containing the user's request
+              },
+              ...imageParts.map((url) => ({
+                type: "image" as const,
+                image: url,
+              })),
+            ],
+          },
+        ],
+      });
+    } catch (generationError) {
+      const refundResult = await RefundCreditsQuery({ amount: 1 });
+
+      if (!refundResult.ok) {
+        console.error(
+          "Failed to refund credits after generation error:",
+          generationError
+        );
+      }
+
+      return NextResponse.json(
+        {
+          error: "Failed to generate style guide",
+          details:
+            generationError instanceof Error
+              ? generationError.message
+              : "Unknown error",
+        },
         { status: 500 }
       );
     }
 
-    await fetchMutation(api.projects.updateProjectStyleGuide, {
-      projectId: projectId as Id<"projects">,
-      styleGuideData: result.object,
-    }, {
-      token: await convexAuthNextjsToken(),
-    });
+    await fetchMutation(
+      api.projects.updateProjectStyleGuide,
+      {
+        projectId,
+        styleGuideData: result.object,
+      },
+      {
+        token: await convexAuthNextjsToken(),
+      }
+    );
 
-    return NextResponse.json({ success: true,
+    return NextResponse.json(
+      {
+        success: true,
         styleGuide: result.object,
         message: "Style guide generated successfully",
-        balance: balance,
+        balance: consumeResult.balance,
       },
-      { status: 200 }   
+      { status: 200 }
     );
 
 

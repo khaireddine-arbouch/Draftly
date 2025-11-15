@@ -9,6 +9,24 @@ import {
   InspirationImagesQuery,
 } from "@/app/convex/query.config";
 
+const HTML_PREVIEW_LIMIT = 2000;
+
+function truncateHtmlSafely(html: string, limit: number): string {
+  if (html.length <= limit) {
+    return html;
+  }
+
+  const sliced = html.slice(0, limit);
+  const lastOpenTagIndex = sliced.lastIndexOf("<");
+  const lastCloseTagIndex = sliced.lastIndexOf(">");
+
+  if (lastOpenTagIndex > lastCloseTagIndex) {
+    return sliced.slice(0, lastOpenTagIndex);
+  }
+
+  return sliced;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -19,7 +37,7 @@ export async function POST(request: NextRequest) {
       !generatedUIId ||
       !currentHTML ||
       !projectId ||
-      pageIndex === undefined
+      pageIndex == null || typeof pageIndex !== 'number'
     ) {
       return NextResponse.json(
         {
@@ -40,28 +58,73 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Consume 1 credit
-    const { ok } = await ConsumeCreditsQuery({ amount: 1 });
-    if (!ok) {
-      return NextResponse.json(
-        { error: "Failed to consume credits" },
-        { status: 500 }
-      );
-    }
-
-    // Fetch style guide for project
-    const styleGuide = await StyleGuideQuery(projectId);
-    const styleGuideData = styleGuide.styleGuide._valueJSON as unknown as {
+    let styleGuideData: {
       colorSections: unknown[];
       typographySections: unknown[];
+    } = {
+      colorSections: [],
+      typographySections: [],
     };
 
-    // Fetch inspiration images
-    const inspirationResult = await InspirationImagesQuery(projectId);
-    const images = inspirationResult.images._valueJSON as unknown as {
-      url: string;
-    }[];
-    const imageUrls = images.map((img) => img.url).filter(Boolean);
+    try {
+      const styleGuide = await StyleGuideQuery(projectId);
+      const rawStyleGuide = styleGuide?.styleGuide?._valueJSON;
+
+      if (rawStyleGuide && typeof rawStyleGuide === "object") {
+        const colorSections = (rawStyleGuide as Record<string, unknown>)
+          .colorSections;
+        const typographySections = (rawStyleGuide as Record<string, unknown>)
+          .typographySections;
+
+        styleGuideData = {
+          colorSections: Array.isArray(colorSections) ? colorSections : [],
+          typographySections: Array.isArray(typographySections)
+            ? typographySections
+            : [],
+        };
+      } else {
+        console.warn(
+          "Style guide data missing or malformed for project:",
+          projectId
+        );
+      }
+    } catch (error) {
+      console.error("Failed to fetch style guide:", {
+        projectId,
+        error,
+      });
+    }
+
+    let inspirationImages: unknown[] = [];
+
+    try {
+      const inspirationResult = await InspirationImagesQuery(projectId);
+      const rawImages = inspirationResult?.images?._valueJSON;
+
+      if (Array.isArray(rawImages)) {
+        inspirationImages = rawImages;
+      } else {
+        console.warn(
+          "Inspiration images data missing or malformed for project:",
+          projectId
+        );
+      }
+    } catch (error) {
+      console.error("Failed to fetch inspiration images:", {
+        projectId,
+        error,
+      });
+    }
+
+    const imageUrls = inspirationImages
+      .map((img) => {
+        if (img && typeof img === "object" && "url" in img) {
+          const url = (img as { url?: unknown }).url;
+          return typeof url === "string" ? url : null;
+        }
+        return null;
+      })
+      .filter((url): url is string => Boolean(url));
 
     // Extract design context
     const colors = styleGuideData?.colorSections || [];
@@ -77,10 +140,16 @@ export async function POST(request: NextRequest) {
 
     const selectedPageType = pageTypes[pageIndex] || pageTypes[0];
 
+    const truncatedHtml = truncateHtmlSafely(currentHTML, HTML_PREVIEW_LIMIT);
+    const htmlPreview =
+      truncatedHtml.length < currentHTML.length
+        ? `${truncatedHtml}...`
+        : truncatedHtml;
+
     let userPrompt = `You are tasked with creating a workflow page that complements the provided main page design. 
 
 MAIN PAGE REFERENCE (for design consistency):
-${currentHTML.substring(0, 2000)}...
+${htmlPreview}
 
 WORKFLOW PAGE TO GENERATE:
 Create a "${selectedPageType}" that would logically complement the main page shown above.
@@ -115,48 +184,119 @@ CONTENT GUIDELINES:
 Please generate a complete, professional HTML page that serves as a ${selectedPageType} while maintaining perfect visual and functional consistency with the main design.`;
 
     if (colors.length > 0) {
-      userPrompt += `\n\nStyle Guide Colors:\n${(
-        colors as Array<{
-          swatches: Array<{
-            name: string;
-            hexColor: string;
-            description: string;
-          }>;
-        }>
-      )
-        .map((color) =>
-          color.swatches
-            .map(
-              (swatch) =>
-                `${swatch.name}: ${swatch.hexColor}, ${swatch.description}`
-            )
-            .join(", ")
-        )
-        .join(", ")}`;
+      const colorText = colors
+        .map((colorSection) => {
+          const swatches = Array.isArray(
+            (colorSection as { swatches?: unknown })?.swatches
+          )
+            ? ((colorSection as { swatches?: unknown[] }).swatches ?? [])
+            : [];
+
+          return swatches
+            .map((swatch) => {
+              if (!swatch || typeof swatch !== "object") {
+                return null;
+              }
+
+              const { name, hexColor, description } = swatch as {
+                name?: unknown;
+                hexColor?: unknown;
+                description?: unknown;
+              };
+
+              const safeName =
+                typeof name === "string" && name.trim().length > 0
+                  ? name
+                  : "Unnamed";
+              const safeHexColor =
+                typeof hexColor === "string" && hexColor.trim().length > 0
+                  ? hexColor
+                  : "N/A";
+              const safeDescription =
+                typeof description === "string" && description.trim().length > 0
+                  ? `, ${description}`
+                  : "";
+
+              return `${safeName}: ${safeHexColor}${safeDescription}`;
+            })
+            .filter(Boolean)
+            .join(", ");
+        })
+        .filter(Boolean)
+        .join(", ");
+
+      if (colorText) {
+        userPrompt += `\n\nStyle Guide Colors:\n${colorText}`;
+      }
     }
 
     if (typography.length > 0) {
-      userPrompt += `\n\nTypography:\n${(
-        typography as Array<{
-          styles: Array<{
-            name: string;
-            description: string;
-            fontFamily: string;
-            fontWeight: string;
-            fontSize: string;
-            lineHeight: string;
-          }>;
-        }>
-      )
-        .map((typo) =>
-          typo.styles
-            .map(
-              (style) =>
-                `${style.name}: ${style.description}, ${style.fontFamily}, ${style.fontWeight}, ${style.fontSize}, ${style.lineHeight}`
-            )
-            .join(", ")
-        )
-        .join(", ")}`;
+      const typographyText = typography
+        .map((section) => {
+          const styles = Array.isArray(
+            (section as { styles?: unknown })?.styles
+          )
+            ? ((section as { styles?: unknown[] }).styles ?? [])
+            : [];
+
+          return styles
+            .map((style) => {
+              if (!style || typeof style !== "object") {
+                return null;
+              }
+
+              const {
+                name,
+                description,
+                fontFamily,
+                fontWeight,
+                fontSize,
+                lineHeight,
+              } = style as {
+                name?: unknown;
+                description?: unknown;
+                fontFamily?: unknown;
+                fontWeight?: unknown;
+                fontSize?: unknown;
+                lineHeight?: unknown;
+              };
+
+              const safeName =
+                typeof name === "string" && name.trim().length > 0
+                  ? name
+                  : "Unnamed";
+              const safeDescription =
+                typeof description === "string" && description.trim().length > 0
+                  ? description
+                  : "No description";
+              const safeFontFamily =
+                typeof fontFamily === "string" && fontFamily.trim().length > 0
+                  ? fontFamily
+                  : "Unknown family";
+              const safeFontWeight =
+                typeof fontWeight === "string" && fontWeight.trim().length > 0
+                  ? fontWeight
+                  : "Unknown weight";
+              const safeFontSize =
+                typeof fontSize === "string" && fontSize.trim().length > 0
+                  ? fontSize
+                  : "Unknown size";
+              const safeLineHeight =
+                typeof lineHeight === "string" && lineHeight.trim().length > 0
+                  ? lineHeight
+                  : "Unknown line height";
+
+              return `${safeName}: ${safeDescription}, ${safeFontFamily}, ${safeFontWeight}, ${safeFontSize}, ${safeLineHeight}`;
+            })
+            .filter(Boolean)
+            .join(", ");
+        })
+        .filter(Boolean)
+        .join(", ");
+
+      if (typographyText) {
+        userPrompt += `\n\nTypography:\n${typographyText}`;
+      }
     }
 
     if (imageUrls.length > 0) {
@@ -189,13 +329,38 @@ Please generate a complete, professional HTML page that serves as a ${selectedPa
     // Convert to streaming response
     const stream = new ReadableStream({
       async start(controller) {
+        const encoder = new TextEncoder();
+        const iterator = result.textStream[Symbol.asyncIterator]?.();
+
+        if (!iterator) {
+          controller.error(
+            new Error("Failed to initiate AI response stream iterator")
+          );
+          return;
+        }
+
         try {
-          for await (const chunk of result.textStream) {
-            const encoder = new TextEncoder();
-            controller.enqueue(encoder.encode(chunk));
+          let nextChunk = await iterator.next();
+
+          if (nextChunk.done) {
+            controller.close();
+            return;
           }
+
+          const consumeResult = await ConsumeCreditsQuery({ amount: 1 });
+
+          if (!consumeResult?.ok) {
+            throw new Error("Failed to consume credits");
+          }
+
+          while (!nextChunk.done) {
+            controller.enqueue(encoder.encode(nextChunk.value));
+            nextChunk = await iterator.next();
+          }
+
           controller.close();
         } catch (error) {
+          console.error("Streaming workflow generation failed:", error);
           controller.error(error);
         }
       },

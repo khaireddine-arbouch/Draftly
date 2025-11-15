@@ -71,7 +71,7 @@ const ToolBarShapes = () => {
     const {currentTool, selectTool} = useInfiniteCanvas();
     return (
         <div className="col-span-1 flex justify-center items-center">
-  <div className="flex items-center backdrop-blur-xl backdrop-[url('#displacementFilter')] bg-white/[0.08] border border-white/[0.12] gap-2 rounded-full p-3 saturate-150">
+  <div className="flex items-center bg-neutral-900/80 border border-white/16 gap-2 rounded-full p-3 saturate-150">
     {tools.map((tool) => (
       <Button
         key={tool.id}
@@ -82,7 +82,7 @@ const ToolBarShapes = () => {
           'cursor-pointer rounded-full p-3',
           currentTool === tool.id
             ? 'text-primary bg-white/12 border border-white/16'
-            : 'text-primary/50 hover:bg-white/6 border border-transparent'
+            : 'text-primary/50 hover:bg-neutral-800/60 border border-transparent'
         )}
         title={`${tool.label} ${tool.description}`}
       >

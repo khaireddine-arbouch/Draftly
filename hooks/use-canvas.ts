@@ -22,19 +22,37 @@ import {
   addRect,
   addText,
   clearSelection,
+  commitHistory,
+  duplicateShapes,
   FrameShape,
   removeShape,
   selectShape,
+  setGenerationStatus,
   setTool,
   Tool,
+  undo,
+  redo,
   updateShape,
+  updateShapeNoHistory,
   type Shape,
 } from "@/redux/slice/shapes";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { downloadBlob, generateFrameSnapshot } from "@/lib/frame-snapshot";
+import {
+  exportGeneratedUIASPNG,
+  generateFrameSnapshot,
+} from "@/lib/frame-snapshot";
 import { nanoid } from "@reduxjs/toolkit";
 import { toast } from "sonner";
 import { useGenerateWorkflowMutation } from "@/redux/api/generation";
+import {
+  addErrorMessage,
+  addUserMessage,
+  clearChat,
+  finishStreamingResponse,
+  initializeChat,
+  startStreamingResponse,
+  updateStreamingContent,
+} from "@/redux/slice/chat";
 
 interface TouchPointer {
   id: number;
@@ -130,6 +148,9 @@ export const useInfiniteCanvas = () => {
   const moveRafRef = useRef<number | null>(null); // RAF for batched move updates
   const pendingMoveDeltaRef = useRef<Point | null>(null); // Pending delta for move
   const pendingPanPointRef = useRef<Point | null>(null);
+
+  // Clipboard for copy/paste of shapes (stores selected IDs)
+  const clipboardRef = useRef<string[] | null>(null);
 
   // Marquee selection state (drag-to-select)
   const isSelectingRef = useRef(false);
@@ -504,7 +525,6 @@ export const useInfiniteCanvas = () => {
           }
         } else if (currentTool === "text") {
           dispatch(addText({ x: world.x, y: world.y }));
-          dispatch(setTool("select"));
         } else {
           isDrawingRef.current = true;
           if (
@@ -593,7 +613,7 @@ export const useInfiniteCanvas = () => {
                   typeof initialPos.y === "number"
                 ) {
                   dispatch(
-                    updateShape({
+                    updateShapeNoHistory({
                       id,
                       patch: {
                         x: initialPos.x + pending.x,
@@ -609,7 +629,7 @@ export const useInfiniteCanvas = () => {
                     x: point.x + pending.x,
                     y: point.y + pending.y,
                   }));
-                  dispatch(updateShape({ id, patch: { points: newPoints } }));
+                  dispatch(updateShapeNoHistory({ id, patch: { points: newPoints } }));
                 }
               } else if (shape.type === "arrow" || shape.type === "line") {
                 if (
@@ -619,7 +639,7 @@ export const useInfiniteCanvas = () => {
                   typeof initialPos.endY === "number"
                 ) {
                   dispatch(
-                    updateShape({
+                    updateShapeNoHistory({
                       id,
                       patch: {
                         startX: initialPos.startX + pending.x,
@@ -636,7 +656,7 @@ export const useInfiniteCanvas = () => {
                   typeof initialPos.y === "number"
                 ) {
                   dispatch(
-                    updateShape({
+                    updateShapeNoHistory({
                       id,
                       patch: {
                         x: initialPos.x + pending.x,
@@ -799,7 +819,6 @@ export const useInfiniteCanvas = () => {
             })
           );
         }
-        dispatch(setTool("select"));
       }
       draftShapeRef.current = null;
     } else if (currentTool === "freedraw") {
@@ -808,7 +827,6 @@ export const useInfiniteCanvas = () => {
         dispatch(addFreeDrawShape({ points }));
       }
       freeDrawPointsRef.current = [];
-      dispatch(setTool("select"));
     }
     requestRender();
   };
@@ -829,6 +847,8 @@ export const useInfiniteCanvas = () => {
         window.cancelAnimationFrame(moveRafRef.current);
         moveRafRef.current = null;
       }
+      // Commit one history checkpoint after a move interaction
+      dispatch(commitHistory());
     }
 
     if (isErasingRef.current) {
@@ -851,15 +871,72 @@ export const useInfiniteCanvas = () => {
 
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      const ae = document.activeElement as HTMLElement | null;
+      const isEditing =
+        ae &&
+        (ae.tagName === "INPUT" ||
+          ae.tagName === "TEXTAREA" ||
+          ae.isContentEditable);
+
+      // Undo / Redo shortcuts
+      if (e.ctrlKey || e.metaKey) {
+        const key = e.key.toLowerCase();
+
+        if (key === "z") {
+          e.preventDefault();
+          if (e.shiftKey) {
+            dispatch(redo());
+          } else {
+            dispatch(undo());
+          }
+          return;
+        }
+
+        if (key === "y") {
+          e.preventDefault();
+          dispatch(redo());
+          return;
+        }
+
+        // Clipboard operations should not interfere with typing in inputs
+        if (isEditing) {
+          return;
+        }
+
+        // Copy selection
+        if (key === "c") {
+          const ids = Object.keys(selectedShapes);
+          if (ids.length) {
+            e.preventDefault();
+            clipboardRef.current = ids;
+          }
+          return;
+        }
+
+        // Paste (duplicate from clipboard or current selection)
+        if (key === "v") {
+          const ids = clipboardRef.current ?? Object.keys(selectedShapes);
+          if (ids && ids.length) {
+            e.preventDefault();
+            dispatch(duplicateShapes({ ids }));
+          }
+          return;
+        }
+
+        // Duplicate current selection
+        if (key === "d") {
+          const ids = Object.keys(selectedShapes);
+          if (ids.length) {
+            e.preventDefault();
+            dispatch(duplicateShapes({ ids }));
+          }
+          return;
+        }
+      }
+
       if (e.code === "Space" && !e.repeat) {
-        const ae = document.activeElement as HTMLElement | null;
         // If typing in an input/textarea/contenteditable, do not hijack Space
-        if (
-          ae &&
-          (ae.tagName === "INPUT" ||
-            ae.tagName === "TEXTAREA" ||
-            ae.isContentEditable)
-        ) {
+        if (isEditing) {
           return;
         }
         e.preventDefault();
@@ -1038,7 +1115,7 @@ export const useInfiniteCanvas = () => {
         shape.type === "generatedui"
       ) {
         dispatch(
-          updateShape({
+          updateShapeNoHistory({
             id: shapeId,
             patch: {
               x: newBounds.x,
@@ -1080,7 +1157,7 @@ export const useInfiniteCanvas = () => {
           })
         );
 
-        dispatch(updateShape({ id: shapeId, patch: { points: scaledPoints } }));
+        dispatch(updateShapeNoHistory({ id: shapeId, patch: { points: scaledPoints } }));
       } else if (shape.type === "arrow" || shape.type === "line") {
         const actualMinX = Math.min(shape.startX, shape.endX);
         const actualMaxX = Math.max(shape.startX, shape.endX);
@@ -1137,7 +1214,7 @@ export const useInfiniteCanvas = () => {
         }
 
         dispatch(
-          updateShape({
+          updateShapeNoHistory({
             id: shapeId,
             patch: {
               startX: newStartX,
@@ -1153,6 +1230,8 @@ export const useInfiniteCanvas = () => {
     const handleResizeEnd = () => {
       isResizingRef.current = false;
       resizeDataRef.current = null;
+      // Commit one history checkpoint after a resize interaction
+      dispatch(commitHistory());
     };
 
     window.addEventListener(
@@ -1244,11 +1323,10 @@ export const useFrame = (shape: FrameShape) => {
   );
 
   const handleGenerateDesign = async () => {
+    let generatedUIId: string | null = null;
     try {
       setIsGenerating(true);
       const snapshot = await generateFrameSnapshot(shape, allShapes);
-      downloadBlob(snapshot, `frame-${shape.frameNumber}-snapshot.png`);
-
       const formData = new FormData();
 
       // Append the image to the FormData with proper filename formatting
@@ -1285,13 +1363,20 @@ export const useFrame = (shape: FrameShape) => {
         h: Math.max(300, shape.h), // At least 300px high, or frame height if larger
       };
 
-      const generatedUIId = nanoid();
+      generatedUIId = nanoid();
       dispatch(
         addGeneratedUI({
           ...generatedUIPosition,
           id: generatedUIId,
           uiSpecData: null, // Start with null for live rendering
           sourceFrameId: shape.id,
+        })
+      );
+
+      dispatch(
+        setGenerationStatus({
+          shapeId: generatedUIId,
+          status: "generating",
         })
       );
 
@@ -1314,6 +1399,12 @@ export const useFrame = (shape: FrameShape) => {
                   patch: { uiSpecData: accumulatedMarkup },
                 })
               );
+              dispatch(
+                setGenerationStatus({
+                  shapeId: generatedUIId,
+                  status: "ready",
+                })
+              );
               break;
             }
             const chunk = decoder.decode(value);
@@ -1334,6 +1425,13 @@ export const useFrame = (shape: FrameShape) => {
         } finally {
           reader.releaseLock();
         }
+      } else {
+        dispatch(
+          setGenerationStatus({
+            shapeId: generatedUIId,
+            status: "ready",
+          })
+        );
       }
     } catch (error) {
       toast.error(
@@ -1341,6 +1439,14 @@ export const useFrame = (shape: FrameShape) => {
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
+      if (generatedUIId) {
+        dispatch(
+          setGenerationStatus({
+            shapeId: generatedUIId,
+            status: "error",
+          })
+        );
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -1355,17 +1461,17 @@ export const useFrame = (shape: FrameShape) => {
 export const useInspiration = () => {
   const [isInspirationOpen, setIsInspirationOpen] = useState(false);
 
-  const toggleInspiration = () => {
-    setIsInspirationOpen(!isInspirationOpen);
-  };
+  const toggleInspiration = useCallback(() => {
+    setIsInspirationOpen((prev) => !prev);
+  }, []);
 
-  const openInspiration = () => {
+  const openInspiration = useCallback(() => {
     setIsInspirationOpen(true);
-  };
+  }, []);
 
-  const closeInspiration = () => {
+  const closeInspiration = useCallback(() => {
     setIsInspirationOpen(false);
-  };
+  }, []);
 
   return {
     isInspirationOpen,
@@ -1462,25 +1568,29 @@ export const useWorkflowGeneration = () => {
             const decoder = new TextDecoder();
             let accumulatedHTML = "";
 
-            if(reader) {
-              while(true){
+            if (reader) {
+              while (true) {
                 const { done, value } = await reader.read();
-                if(done) break
+                if (done) break;
 
                 const chunk = decoder.decode(value);
                 accumulatedHTML += chunk;
 
-
-                dispatch(updateShape({ id: workflowId, patch: { uiSpecData: accumulatedHTML } }));
+                dispatch(
+                  updateShape({
+                    id: workflowId,
+                    patch: { uiSpecData: accumulatedHTML },
+                  })
+                );
               }
             }
-            return {pageIndex: index, success: true};
+            return { pageIndex: index, success: true };
           } catch (error) {
             console.error(
               `Error generating workflow for page ${index + 1}:`,
               error
             );
-            return {pageIndex: index, success: false, error};
+            return { pageIndex: index, success: false, error };
           }
         }
       );
@@ -1489,19 +1599,31 @@ export const useWorkflowGeneration = () => {
       const successCount = results.filter((result) => result.success).length;
       const failedCount = results.filter((result) => !result.success).length;
 
-      if(successCount === 0) {
-        toast.success("Workflow generated successfully", { id: "workflow-generation" });
-      } else if (successCount > 0){
-        toast.success(`Workflow generated successfully for ${successCount}/4 pages`, { id: "workflow-generation" });
-        if(failedCount > 0) {
+      if (successCount === 0) {
+        toast.success("Workflow generated successfully", {
+          id: "workflow-generation",
+        });
+      } else if (successCount > 0) {
+        toast.success(
+          `Workflow generated successfully for ${successCount}/4 pages`,
+          { id: "workflow-generation" }
+        );
+        if (failedCount > 0) {
           toast.error(`Failed to generate ${failedCount} workflow pages`);
         }
       } else {
-        toast.error(`Failed to generate workflow pages`, { id: "workflow-generation" });
+        toast.error(`Failed to generate workflow pages`, {
+          id: "workflow-generation",
+        });
       }
     } catch (error) {
       console.error("Error generating workflow:", error);
-      toast.error(`Failed to generate workflow: ${error instanceof Error ? error.message : "Unknown error"}`, { id: "workflow-generation" });
+      toast.error(
+        `Failed to generate workflow: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+        { id: "workflow-generation" }
+      );
     }
   };
   return {
@@ -1512,13 +1634,259 @@ export const useWorkflowGeneration = () => {
 
 export const useGlobalChat = () => {
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [activeGeneratedUIId, setActiveGeneratedUIId] = useState<string | null>(null);
-  const {generateWorkflow} = useWorkflowGeneration();
+  const [activeGeneratedUIId, setActiveGeneratedUIId] = useState<string | null>(
+    null
+  );
+  const { generateWorkflow } = useWorkflowGeneration();
+
+  const exportDesign = async (
+    generatedUIId: string,
+    element: HTMLElement | null
+  ) => {
+    if (!element) {
+      console.warn("⚠️ No element to export for shape:", generatedUIId);
+      toast.error("No design element found for export.");
+      return;
+    }
+
+    try {
+      if (!element) {
+        toast.error("No element to export.");
+        return;
+      }
+
+      const filename = `generated-ui-${generatedUIId.slice(0, 8)}.png`;
+      console.log("📸 Starting snapshot export:", { filename });
+
+      // Export the element as PNG
+      await exportGeneratedUIASPNG(element, filename);
+
+      toast.success("✅ Design exported successfully!");
+    } catch (error) {
+      console.error("❌ Failed to export Generated UI:", error);
+      toast.error("Failed to export design. Please try again.");
+    }
+  };
+
+  const openChat = (generatedUIId: string) => {
+    setActiveGeneratedUIId(generatedUIId);
+    setIsChatOpen(true);
+  };
+
+  const closeChat = () => {
+    setIsChatOpen(false);
+    setActiveGeneratedUIId(null);
+  };
+
+  const toggleChat = (generatedUIId: string) => {
+    if (isChatOpen && activeGeneratedUIId === generatedUIId) {
+      closeChat();
+    } else {
+      openChat(generatedUIId);
+    }
+  };
 
   return {
     isChatOpen,
     activeGeneratedUIId,
-    generateWorkflow
-  }
+    generateWorkflow,
+    exportDesign,
+    openChat,
+    closeChat,
+    toggleChat,
+  };
+};
 
+export const useChatWindow = (generatedUIId: string, isOpen: boolean) => {
+  const [inputValue, setInputValue] = useState("");
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dispatch = useAppDispatch();
+  const chatState = useAppSelector((state) => state.chat.chats[generatedUIId]);
+  const currentShape = useAppSelector(
+    (state) => state.shapes.shapes.entities[generatedUIId]
+  );
+  const allShapes = useAppSelector((state) => state.shapes.shapes.entities);
+
+  const getSourceFrame = (): FrameShape | null => {
+    if (!currentShape || currentShape.type !== "generatedui") {
+      return null;
+    }
+    const sourceFrameId = currentShape.sourceFrameId;
+    if (!sourceFrameId) {
+      return null;
+    }
+
+    const sourceFrame = allShapes[sourceFrameId];
+    if (!sourceFrame || sourceFrame.type !== "frame") {
+      return null;
+    }
+    return sourceFrame as FrameShape;
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      dispatch(initializeChat(generatedUIId));
+      // You, 1 secon
+    }
+  }, [dispatch, generatedUIId, isOpen]);
+
+  useEffect(() => {
+    if (scrollAreaRef.current) {
+      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+    }
+  }, [chatState?.messages]);
+
+  useEffect(() => {
+    if (isOpen && inputRef.current) {
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [isOpen]);
+
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || chatState?.isStreaming) return;
+
+    const message = inputValue.trim();
+
+    setInputValue("");
+
+    try {
+      dispatch(addUserMessage({ generatedUIId, content: message }));
+
+      const responseId = `response-${Date.now()}`;
+      dispatch(
+        startStreamingResponse({ generatedUIId, messageId: responseId })
+      );
+
+      const isWorkflowPage =
+        currentShape?.type === "generatedui" && currentShape.isWorkflowPage;
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const projectId = urlParams.get("project");
+
+      if (!projectId) {
+        throw new Error("Project ID not found in URL");
+      }
+
+      const baseRequestData = {
+        userMessage: message,
+        generatedUIId: generatedUIId,
+        currentHTML:
+          currentShape?.type === "generatedui" ? currentShape.uiSpecData : null,
+        projectId: projectId, // Pass projectId in body
+      };
+
+      let apiEndpoint = "/api/generate/redesign";
+      let wireframeSnapshot: string | null = null;
+
+      if (isWorkflowPage) {
+        apiEndpoint = "/api/generate/workflow-redesign";
+      } else {
+        const sourceFrame = getSourceFrame();
+        if (sourceFrame && sourceFrame.type === "frame") {
+          try {
+            const allShapesArray = Object.values(allShapes).filter(
+              Boolean
+            ) as Shape[];
+            const snapshot = await generateFrameSnapshot(
+              sourceFrame,
+              allShapesArray
+            );
+            const arrayBuffer = await snapshot.arrayBuffer();
+            const base64 = btoa(
+              String.fromCharCode(...new Uint8Array(arrayBuffer))
+            );
+            wireframeSnapshot = base64;
+          } catch (error) {
+            console.error("Error generating frame snapshot:", error);
+          }
+        } else {
+          console.warn("No source frame found for wireframe snapshot");
+        }
+      }
+
+      const requestData = isWorkflowPage
+        ? baseRequestData
+        : { ...baseRequestData, wireframeSnapshot };
+
+      const response = await fetch(apiEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestData),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedHTML = "";
+
+      if (reader) {
+        while (true) {
+          // You, 3 seconds ago Uncor
+          const { done, value } = await reader.read();
+
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          accumulatedHTML += chunk;
+
+          // Update streaming message with "Regenerating design..."
+          dispatch(
+            updateStreamingContent({
+              generatedUIId,
+              messageId: responseId,
+              content: "Regenerating your design...",
+            })
+          );
+
+          // Update the GeneratedUI shape with new HTML in real-time
+          dispatch(
+            updateShape({
+              id: generatedUIId,
+              patch: { uiSpecData: accumulatedHTML },
+            })
+          );
+        }
+      }
+      dispatch(
+        finishStreamingResponse({
+          generatedUIId,
+          messageId: responseId,
+          finalContent: "Design regenerated successfully!",
+        })
+      );
+    } catch (error) {
+      dispatch(
+        addErrorMessage({
+          generatedUIId,
+          error: error instanceof Error ? error.message : "Unknown error",
+        })
+      );
+      toast.error("Failed to generate design");
+    }
+  };
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  const handleClearChat = () => {
+    dispatch(clearChat(generatedUIId));
+  };
+
+  return {
+    inputValue,
+    setInputValue,
+    scrollAreaRef,
+    inputRef,
+    handleSendMessage,
+    handleKeyPress,
+    handleClearChat,
+    chatState,
+  };
 };

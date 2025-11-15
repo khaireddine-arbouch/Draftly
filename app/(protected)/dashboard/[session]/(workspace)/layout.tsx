@@ -11,7 +11,8 @@ export default async function Layout({
 }) {
   const { entitlement, profileName } = await SubscriptionEntitlementQuery();
   if (!entitlement) {
-    redirect(`/billing/${combinedSlug(profileName!)}`);
+    const slug = profileName ? combinedSlug(profileName) : "default";
+    redirect(`/billing/${slug}`);
   }
   return (
     <div className="grid grid-cols-1">

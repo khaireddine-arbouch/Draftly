@@ -5,12 +5,12 @@ import { cn } from "@/lib/utils";
 import { useSubscriptionPlan } from "@/hooks/use-billings";
 
 const SubscribeButton = () => {
-  const { onSubscribe, isFetching } = useSubscriptionPlan();
+  const { onSubscribe, isLoading } = useSubscriptionPlan();
   return (
     <Button
       type="button"
       onClick={onSubscribe}
-      disabled={isFetching}
+      disabled={isLoading}
       className={cn(
         "backdrop-blur-xl bg-white/8 border border-white/12",
         "saturate-150 rounded-full shadow-xl",

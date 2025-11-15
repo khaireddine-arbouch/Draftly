@@ -25,7 +25,10 @@ type Props = {
   isFromServer?: boolean;
 };
 
-const InspirationSidebar = ({ isOpen, onClose }: InspirationSidebarProps) => {
+export const InspirationSidebar = ({
+  isOpen,
+  onClose,
+}: InspirationSidebarProps) => {
   const [images, setImages] = useState<Props[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -41,6 +44,18 @@ const InspirationSidebar = ({ isOpen, onClose }: InspirationSidebarProps) => {
     api.inspiration.getInspirationImages,
     projectId ? { projectId: projectId as Id<"projects"> } : "skip"
   );
+
+  const revokeBlobUrl = useCallback((url?: string) => {
+    if (!url || !url.startsWith("blob:")) {
+      return;
+    }
+
+    try {
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.warn("Failed to revoke object URL", error);
+    }
+  }, []);
 
   useEffect(() => {
     if (existingImages && existingImages.length > 0) {
@@ -61,6 +76,14 @@ const InspirationSidebar = ({ isOpen, onClose }: InspirationSidebarProps) => {
       setImages((prev) => prev.filter((img) => !img.isFromServer));
     }
   }, [existingImages]);
+
+  useEffect(() => {
+    return () => {
+      images.forEach((image) => {
+        revokeBlobUrl(image.url);
+      });
+    };
+  }, [images, revokeBlobUrl]);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -127,37 +150,48 @@ const InspirationSidebar = ({ isOpen, onClose }: InspirationSidebarProps) => {
       if (newImages.length > 0) {
         setImages((prev) => [...prev, ...newImages]);
 
-        newImages.forEach(async (image) => {
+        void (async () => {
+          const newImageIds = new Set(newImages.map((image) => image.id));
+
           setImages((prev) =>
             prev.map((img) =>
-              img.id === image.id ? { ...img, uploading: true } : img
+              newImageIds.has(img.id) ? { ...img, uploading: true } : img
             )
           );
-          try {
-            const { storageId } = await uploadImage(image.file!);
-            setImages((prev) =>
-              prev.map((img) =>
-                img.id === image.id
-                  ? {
-                      ...img,
-                      storageId,
-                      uploaded: true,
-                      uploading: false,
-                      isFromServer: true,
-                    }
-                  : img
-              )
-            );
-          } catch (error) {
-            setImages((prev) =>
-              prev.map((img) =>
-                img.id === image.id
-                  ? { ...img, uploading: false, error: "Upload failed" }
-                  : img
-              )
-            );
-          }
-        });
+
+          const uploadResults = await Promise.all(
+            newImages.map(async (image) => {
+              try {
+                const { storageId } = await uploadImage(image.file!);
+                return { id: image.id, storageId };
+              } catch (error) {
+                console.error("Failed to upload inspiration image:", error);
+                return { id: image.id, error: "Upload failed" as const };
+              }
+            })
+          );
+
+          const resultsById = new Map(uploadResults.map((result) => [result.id, result]));
+
+          setImages((prev) =>
+            prev.map((img) => {
+              const result = resultsById.get(img.id);
+              if (!result) return img;
+
+              if ("error" in result) {
+                return { ...img, uploading: false, error: result.error };
+              }
+
+              return {
+                ...img,
+                storageId: result.storageId,
+                uploaded: true,
+                uploading: false,
+                isFromServer: true,
+              };
+            })
+          );
+        })();
       }
     },
     [images.length, uploadImage]
@@ -177,8 +211,12 @@ const InspirationSidebar = ({ isOpen, onClose }: InspirationSidebarProps) => {
   );
 
   const clearAllImages = async () => {
+    const currentImages = [...images];
+
+    currentImages.forEach((img) => revokeBlobUrl(img.url));
+
     // Remove each image individually from server
-    const imagesToRemove = images.filter(
+    const imagesToRemove = currentImages.filter(
       (img) => img.storageId && img.isFromServer
     );
 
@@ -203,6 +241,8 @@ const InspirationSidebar = ({ isOpen, onClose }: InspirationSidebarProps) => {
     const image = images.find((img) => img.id === imageId);
     if (!image) return;
 
+    revokeBlobUrl(image.url);
+
     // If it's a server image, remove from Convex
     if (image.storageId && image.isFromServer && projectId) {
       try {
@@ -219,10 +259,16 @@ const InspirationSidebar = ({ isOpen, onClose }: InspirationSidebarProps) => {
     setImages((prev) => prev.filter((img) => img.id !== imageId));
   };
 
+  const isUploading = images.some((img) => img.uploading);
+
+  if (!isOpen) {
+    return null;
+  }
+
   return (
     <div
       className={cn(
-        "fixed left-5 top-1/2 transform -translate-y-1/2 w-80 backdrop-blur-xl bg-white/8 border-white/12 gap-2 p-3 saturate-150 border rounded-lg z-50 transition-transform duration-300"
+        "fixed left-5 top-1/2 transform -translate-y-1/2 w-80 bg-neutral-900/80 border-white/16 gap-2 p-3 saturate-150 border rounded-lg z-50 transition-transform duration-300"
       )}
     >
       <div className="p-4 flex flex-col gap-4 overflow-y-auto max-h-[calc(100vh-8rem)]">
@@ -295,25 +341,33 @@ const InspirationSidebar = ({ isOpen, onClose }: InspirationSidebarProps) => {
               <Trash2 className="w-3 h-3 mr-1" />
               Clear All
             </Button>
+            {isUploading && (
+              <Loader2 className="w-5 h-5 text-white animate-spin" />
+            )}
           </div>
-
           <div className="grid grid-cols-2 gap-2">
             {images.map((image) => (
               <div
                 key={image.id}
                 className="relative group aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5"
               >
-                <Image
-                  src={image.url || ""}
-                  alt="Inspiration"
-                  className="w-full h-full object-cover"
-                  width={100}
-                  height={100}
-                />
+                {image.url ? (
+                  <Image
+                    src={image.url}
+                    alt={image.file?.name ?? "Inspiration image"}
+                    className="w-full h-full object-cover"
+                    width={100}
+                    height={100}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center w-full h-full bg-white/10 text-[10px] text-white/60">
+                    No preview available
+                  </div>
+                )}
 
                 {image.uploading && (
                   <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                    <Loader2 className="w-6 h-6text-white animate-spin" />
+                    <Loader2 className="w-6 h-6 text-white animate-spin" />
                   </div>
                 )}
 
@@ -334,7 +388,7 @@ const InspirationSidebar = ({ isOpen, onClose }: InspirationSidebarProps) => {
                   <X className="w-3 h-3 text-white" />
                 </Button>
                 {image.uploaded && !image.uploading && (
-                  <div className="absolute bottom-1 right-1 w-3 h-3bg-green-500 rounded-full border border-white/20"></div>
+                  <div className="absolute bottom-1 right-1 w-3 h-3 bg-green-500 rounded-full border border-white/20"></div>
                 )}
               </div>
             ))}

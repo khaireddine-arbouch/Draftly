@@ -25,7 +25,7 @@ export const LinePreview = ({
         width,
         height,
       }}
-      aria-hidden>
+      aria-hidden="true">
       <line
         x1={startX - minX}
         y1={startY - minY}

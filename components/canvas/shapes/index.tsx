@@ -3,7 +3,7 @@ import { Rectangle } from "./rectangle";
 import { Stroke } from "./stroke";
 import { Line } from "./line";
 import { Arrow } from "./arrow";
-import { Elipse } from "./elipse";
+import { Ellipse } from "./ellipse";
 import { Text } from "./text";
 import { Frame } from "./frame";
 import GeneratedUI from "./generatedui";
@@ -19,7 +19,7 @@ const ShapeRenderer = ({
   toggleInspiration: () => void;
   toggleChat: (generatedUIId: string) => void;
   generateWorkflow: (generatedUIId: string) => void;
-  exportDesign: (generatedUIId: string, element: HTMLElement) => void;
+  exportDesign: (generatedUIId: string, element: HTMLElement | null) => void;
 }) => {
   switch (shape.type) {
     case "frame":
@@ -27,7 +27,7 @@ const ShapeRenderer = ({
     case "rect":
       return <Rectangle shape={shape} />;
     case "ellipse":
-      return <Elipse shape={shape} />;
+      return <Ellipse shape={shape} />;
     case "freedraw":
       return <Stroke shape={shape} />;
     case "arrow":

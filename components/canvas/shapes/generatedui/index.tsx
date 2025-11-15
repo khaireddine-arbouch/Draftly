@@ -1,8 +1,9 @@
 import { LiquidGlassButton } from "@/components/buttons/liquid-glass";
 import { useUpdateContainer } from "@/hooks/use-styles";
 import { GeneratedUIShape } from "@/redux/slice/shapes";
-import { Download, MessageCircle } from "lucide-react";
+import { Download, Loader2, MessageCircle, RotateCcw } from "lucide-react";
 import React from "react";
+import { useAppSelector } from "@/redux/store";
 
 type Props = {
   shape: GeneratedUIShape;
@@ -18,6 +19,13 @@ const GeneratedUI: React.FC<Props> = ({
   exportDesign,
 }) => {
   const { sanitizeHtml, containerRef } = useUpdateContainer(shape);
+  const generationStatus =
+    useAppSelector(
+      (state) => state.shapes.generationStatus[shape.id]
+    ) ?? (shape.uiSpecData ? "ready" : "idle");
+  const isGenerating = generationStatus === "generating";
+  const isReady = generationStatus === "ready";
+  const isError = generationStatus === "error";
 
   const handleExportDesign = () => {
     if (!shape.uiSpecData) {
@@ -67,25 +75,49 @@ const GeneratedUI: React.FC<Props> = ({
               size="sm"
               variant="subtle"
               onClick={handleExportDesign}
-              disabled={!shape.uiSpecData}
+              disabled={!shape.uiSpecData || isGenerating || isError}
               style={{ pointerEvents: "auto" }}
             >
-              <Download size={12} />
-              Export
+              {isGenerating ? (
+                <>
+                  <Loader2 size={12} className="animate-spin" />
+                  Generating...
+                </>
+              ) : isReady ? (
+                <>
+                  <Download size={12} />
+                  Export
+                </>
+              ) : isError ? (
+                <>
+                  <RotateCcw size={12} />
+                  Retry
+                </>
+              ) : (
+                <>
+                  <Loader2 size={12} className="animate-spin" />
+                  Preparing...
+                </>
+              )}
             </LiquidGlassButton>
 
             <LiquidGlassButton
               size="sm"
               variant="subtle"
               onClick={handleToggleChat}
-              disabled={!shape.uiSpecData}
+              disabled={!shape.uiSpecData || isGenerating}
               style={{ pointerEvents: "auto" }}
             >
               <MessageCircle size={12} />
               Design Chat
             </LiquidGlassButton>
           </div>
-          {shape.uiSpecData ? (
+          {isError ? (
+            <div className="flex items-center justify-center p-8 text-red-400 text-sm font-medium gap-2">
+              <RotateCcw size={14} />
+              Generation failed. Try again.
+            </div>
+          ) : shape.uiSpecData ? (
             <div
               className="h-auto"
               dangerouslySetInnerHTML={{
@@ -94,7 +126,10 @@ const GeneratedUI: React.FC<Props> = ({
             />
           ) : (
             <div className="flex items-center justify-center p-8 text-white/60">
-              <div className="animate-pulse">Generating design...</div>
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Generating design...</span>
+              </div>
             </div>
           )}
         </div>

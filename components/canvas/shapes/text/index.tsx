@@ -8,24 +8,14 @@ export const Text = ({ shape }: { shape: TextShape }) => {
   const [isEditing, setIsEditing] = useState(shape.text === "Type here...");
   const [tempText, setTempText] = useState(shape.text);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  // Auto-focus when text is newly created (placeholder text)
-  useEffect(() => {
-    if (shape.text === "Type here..." && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select(); // Select all placeholder text
-      setIsEditing(true);
-    }
-  }, [shape.text]);
+  const isInitialPlaceholder = useRef(shape.text === "Type here...");
 
   useEffect(() => {
-    if (isEditing && inputRef.current) {
+    if (inputRef.current && isInitialPlaceholder.current) {
       inputRef.current.focus();
-      if (shape.text === "Type here...") {
-        inputRef.current.select(); // Select placeholder text
-      }
+      inputRef.current.select(); // Select placeholder text
     }
-  }, [isEditing, shape.text]);
+  }, []);
 
   const handleDoubleClick = () => {
     setIsEditing(true);
@@ -34,14 +24,20 @@ export const Text = ({ shape }: { shape: TextShape }) => {
 
   const handleBlur = () => {
     setIsEditing(false);
-    if (tempText.trim() === "" || tempText.trim() === "Type here...") {
+    const trimmedTemp = tempText.trim();
+    const trimmedOriginal = shape.text.trim();
+
+    if (
+      trimmedOriginal === "Type here..." &&
+      (trimmedTemp === "" || trimmedTemp === "Type here...")
+    ) {
       // Delete empty or unchanged placeholder text box
       dispatch(removeShape(shape.id));
-    } else if (tempText.trim() !== shape.text) {
+    } else if (trimmedTemp !== trimmedOriginal) {
       dispatch(
         updateShape({
           id: shape.id,
-          patch: { text: tempText.trim() },
+          patch: { text: trimmedTemp },
         })
       );
     }

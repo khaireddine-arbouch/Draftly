@@ -4,6 +4,21 @@ import { v } from "convex/values";
 
 const schema = defineSchema({
   ...authTables,
+  users: defineTable({
+    name: v.optional(v.string()),
+    image: v.optional(v.string()),
+    email: v.optional(v.string()),
+    emailVerificationTime: v.optional(v.number()),
+    phone: v.optional(v.string()),
+    phoneVerificationTime: v.optional(v.number()),
+    isAnonymous: v.optional(v.boolean()),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
+    onboardedAt: v.optional(v.number()),
+    lastLoginAt: v.optional(v.number()),
+  })
+    .index("email", ["email"])
+    .index("phone", ["phone"]),
   // Your other tables...
 
   // Subscriptions table
@@ -58,6 +73,19 @@ const schema = defineSchema({
     .index("by_userId", ["userId"]) // Index for querying by user
     .index("by_idempotencyKey", ["idempotencyKey"]), // Index for idempotency key to avoid duplicate entries
 
+  // Storage references table
+  storage_references: defineTable({
+    storageId: v.id("_storage"), // Storage identifier from Convex storage
+    userId: v.id("users"), // Owner of the storage asset
+    projectId: v.id("projects"), // Project that references the asset
+    collection: v.string(), // Logical collection, e.g. "inspiration"
+    createdAt: v.number(), // Timestamp when the reference was created
+  })
+    .index("by_storageId", ["storageId"])
+    .index("by_storageId_collection", ["storageId", "collection"])
+    .index("by_userId_collection", ["userId", "collection"])
+    .index("by_projectId_collection", ["projectId", "collection"]),
+
   // Projects table
   projects: defineTable({
     userId: v.id("users"),
@@ -73,6 +101,7 @@ const schema = defineSchema({
     lastModified: v.number(), // Timestamp for last modification
     createdAt: v.number(), // Project creation timestamp
     isPublic: v.optional(v.boolean()), // For future sharing features
+    archived: v.optional(v.boolean()), // Soft-archive flag
     tags: v.optional(v.array(v.string())), // For categorization or filtering
     projectNumber: v.number(), // Auto-incrementing project number per user
   })

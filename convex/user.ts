@@ -20,6 +20,9 @@ export const getCurrentUser = query({
 export const getUserIdByEmail = query({
   args: { email: v.string() },
   handler: async (ctx, { email }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+    
     const user = await ctx.db
     .query('users')
     .withIndex('email', (q) => q.eq('email', email))

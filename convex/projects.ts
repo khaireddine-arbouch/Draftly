@@ -48,6 +48,7 @@ export const createProject = mutation({
       lastModified: Date.now(),            // Timestamp for the last modification
       createdAt: Date.now(),               // Timestamp for project creation
       isPublic: false,                     // Default to private project (can be modified if needed)
+      archived: false,                     // Default to not archived
     });
     
     console.log('✔ [Convex] Project created:', {
@@ -115,6 +116,7 @@ export const getUserProjects = query({
       createdAt: project.createdAt,
       isPublic: project.isPublic,
       projectNumber: project.projectNumber,
+      archived: project.archived ?? false,
     }));
   },
 });
@@ -146,15 +148,44 @@ export const updateProjectSketches = mutation({
     projectId: v.id('projects'),
     sketchesData: v.any(),
     viewportData: v.optional(v.any()),
+    thumbnail: v.optional(v.string()),
   },
-  handler: async (ctx, { projectId, sketchesData, viewportData }) => {
+  handler: async (ctx, { projectId, sketchesData, viewportData, thumbnail }) => {
+    const userId = await getAuthUserId(ctx)
+    if (!userId) throw new Error('Not authenticated')
+
     const project = await ctx.db.get(projectId)
     if (!project) throw new Error('Project not found')
+
+    type ProjectAccess = {
+      ownerId?: Id<'users'>
+      collaboratorIds?: Id<'users'>[]
+      collaborators?: Id<'users'>[]
+      members?: Id<'users'>[]
+    }
+
+    const projectAccess = project as typeof project & ProjectAccess
+
+    const ownerId = projectAccess.ownerId ?? project.userId
+    const collaborators =
+      projectAccess.collaboratorIds ??
+      projectAccess.collaborators ??
+      projectAccess.members ??
+      []
+
+    const isAuthorized =
+      ownerId === userId ||
+      (Array.isArray(collaborators) && collaborators.includes(userId))
+
+    if (!isAuthorized) {
+      throw new Error('Access denied')
+    }
 
     const updateData: {
       sketchesData: unknown;
       lastModified: number;
       viewportData?: unknown;
+      thumbnail?: string;
     } = {
       sketchesData,
       lastModified: Date.now(),
@@ -162,6 +193,9 @@ export const updateProjectSketches = mutation({
 
     if (viewportData) {
       updateData.viewportData = viewportData
+    }
+    if (thumbnail) {
+      updateData.thumbnail = thumbnail
     }
 
     // Continue with your database update logic...
@@ -201,6 +235,56 @@ export const updateProjectStyleGuide = mutation({
     console.log('[Convex] Project style guide updated successfully');
     
     return { success: true, styleGuide: styleGuideData };  // Return the updated style guide
+  },
+});
+
+export const updateProjectMeta = mutation({
+  args: {
+    projectId: v.id("projects"),
+    name: v.optional(v.string()),
+    archived: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { projectId, name, archived }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const project = await ctx.db.get(projectId);
+    if (!project) throw new Error("Project not found");
+    if (project.userId !== userId) throw new Error("Access denied");
+
+    const patch: Record<string, unknown> = {
+      lastModified: Date.now(),
+    };
+
+    if (typeof name === "string") {
+      patch.name = name;
+    }
+    if (typeof archived === "boolean") {
+      patch.archived = archived;
+    }
+
+    await ctx.db.patch(projectId, patch);
+    return { success: true };
+  },
+});
+
+export const deleteProject = mutation({
+  args: {
+    projectId: v.id("projects"),
+  },
+  handler: async (ctx, { projectId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const project = await ctx.db.get(projectId);
+    if (!project) throw new Error("Project not found");
+    if (project.userId !== userId) throw new Error("Access denied");
+
+    await ctx.db.delete(projectId);
+
+    // NOTE: You could also clean up related assets here (storage_references, etc.).
+
+    return { success: true };
   },
 });
 

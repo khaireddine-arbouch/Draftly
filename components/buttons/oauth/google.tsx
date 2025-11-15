@@ -1,10 +1,19 @@
-import { Button } from "../../ui/button";
+"use client";
+
 import { useAuthActions } from "@convex-dev/auth/react";
+
+import { Button } from "../../ui/button";
 
 const Google = () => {
     const { signIn } = useAuthActions();
     return (
-        <Button variant="outline" type="button" onClick={() => void signIn("google")} className="w-full">
+        <Button
+            variant="outline"
+            type="button"
+            className="w-full"
+            aria-label="Sign in with Google"
+            onClick={() => void signIn("google")}
+        >
             <svg
                 xmlns="http://www.w3.org/2000/svg"
                 width="0.98em"

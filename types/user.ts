@@ -1,5 +1,3 @@
-import { combinedSlug } from "@/lib/utils";
-
 // Type definition for the raw data fetched from Convex
 export type ConvexUserRaw = {
   _creationTime: number;
@@ -8,6 +6,10 @@ export type ConvexUserRaw = {
   emailVerificationTime?: number;
   image?: string;
   name?: string;
+  firstName?: string;
+  lastName?: string;
+  onboardedAt?: number;
+  lastLoginAt?: number;
 };
 
 // Type definition for the normalized profile
@@ -18,6 +20,10 @@ export type Profile = {
   emailVerifiedAtMs?: number; // normalized from emailVerificationTime
   image?: string;
   name?: string;
+  firstName?: string;
+  lastName?: string;
+  onboardedAt?: number;
+  lastLoginAt?: number;
 };
 
 // Normalizes the raw Convex user data into a cleaner profile
@@ -32,7 +38,9 @@ export const normalizeProfile = (raw: ConvexUserRaw | null): Profile | null => {
     return username.split(/[._]/).map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(" ");
   };
 
-  const name = combinedSlug(raw.name!) || extractNameFromEmail(raw.email);
+  const providedName = raw.name?.trim();
+  const inferredName = [raw.firstName, raw.lastName].filter(Boolean).join(" ").trim();
+  const name = providedName || inferredName || extractNameFromEmail(raw.email);
 
   // Normalize and map fields
   return {
@@ -41,6 +49,10 @@ export const normalizeProfile = (raw: ConvexUserRaw | null): Profile | null => {
     email: raw.email, // Email stays the same
     emailVerifiedAtMs: raw.emailVerificationTime, // Optional, if exists
     image: raw.image, // Optional, if exists
-    name: name, // Optional, if exists
+    name,
+    firstName: raw.firstName,
+    lastName: raw.lastName,
+    onboardedAt: raw.onboardedAt,
+    lastLoginAt: raw.lastLoginAt,
   };
 };

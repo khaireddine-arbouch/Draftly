@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     };
 
     const styleGuideData =
-      (styleGuide.styleGuide?._valueJSON as unknown as StyleGuideData) || {};
+      (styleGuide?.styleGuide as unknown as StyleGuideData | undefined) || {};
     const colors = Array.isArray(styleGuideData.colorSections)
       ? styleGuideData.colorSections
       : [];
@@ -95,24 +95,31 @@ export async function POST(request: NextRequest) {
         | Array<{ url?: string }>
         | undefined) || [];
     const imageUrls = Array.isArray(images)
-      ? images.map((img) => img.url).filter(Boolean)
+      ? images
+          .map((img) => img?.url)
+          .filter(
+            (url): url is string => typeof url === "string" && url.trim().length > 0
+          )
       : [];
-
 
     // Build user prompt
     let userPrompt = `Please redesign this UI based on my request: "${userMessage}"`;
     if (currentHTML) {
-      userPrompt += `\n\nCurrent HTML for reference:\n${currentHTML.substring(
-        0,
-        1000
-      )}`;
+      const MAX_HTML_SNIPPET_LENGTH = 5000;
+      const htmlSnippet =
+        currentHTML.length > MAX_HTML_SNIPPET_LENGTH
+          ? `${currentHTML.substring(0, MAX_HTML_SNIPPET_LENGTH)}\n\n[Truncated for length]`
+          : currentHTML;
+      userPrompt += `\n\nCurrent HTML for reference:\n${htmlSnippet}`;
     }
 
     if (wireframeSnapshot) {
-        userPrompt += `\n\nWireframe Context: I'm providing a wireframe image that shows the EXACT original design layout and structure that this UI was generated from. This wireframe represents the specific frame that was used to create the current design. Please use this as visual context to understand the intended layout, structure, and design elements when making improvements. The wireframe shows the original wireframe/mockup that the user drew or created.`;
-        console.log("Using wireframe snapshot for regeneration");
+      userPrompt += `\n\nWireframe Context: I'm providing a wireframe image that shows the EXACT original design layout and structure that this UI was generated from. This wireframe represents the specific frame that was used to create the current design. Please use this as visual context to understand the intended layout, structure, and design elements when making improvements. The wireframe shows the original wireframe/mockup that the user drew or created.`;
+      console.log("Using wireframe snapshot for regeneration");
     } else {
-        console.log("No wireframe snapshot provided for regeneration - using text-only regeneration");
+      console.log(
+        "No wireframe snapshot provided for regeneration - using text-only regeneration"
+      );
     }
 
     const colorDescriptions = colors
@@ -147,59 +154,70 @@ export async function POST(request: NextRequest) {
     if (typographyDescriptions.length > 0) {
       userPrompt += `\n\nTypography:\n${typographyDescriptions.join(", ")}`;
     }
-    
-      if (imageUrls.length > 0) {
-        userPrompt += `\n\nInspiration Images Available: ${imageUrls.length} reference images for visual style and inspiration.`;
-      }
 
-      userPrompt += '\n\nPlease generate a completely new HTML design based on my request while following the style guide, maintaining professional quality, and considering the wireframe context for layout understanding.'
+    if (imageUrls.length > 0) {
+      userPrompt += `\n\nInspiration Images Available: ${imageUrls.length} reference images for visual style and inspiration.`;
+    }
 
+    userPrompt +=
+      "\n\nPlease generate a completely new HTML design based on my request while following the style guide, maintaining professional quality, and considering the wireframe context for layout understanding.";
 
-      
-
-
+    const messageContent: Array<
+      | { type: "text"; text: string }
+      | { type: "image"; image: string }
+    > = [
+      ...(wireframeSnapshot
+        ? [
+            {
+              type: "image" as const,
+              image: wireframeSnapshot,
+            },
+          ]
+        : []),
+      ...imageUrls.map((url) => ({
+        type: "image" as const,
+        image: url,
+      })),
+      {
+        type: "text" as const,
+        text: userPrompt,
+      },
+    ];
 
     const result = streamText({
-        model: anthropic("claude-opus-4-20250514"),
-        system: prompts.generativeUi.system,
-        temperature: 0.7,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: userPrompt,
-              },
-            ],
-          },
-        ],
-      });
+      model: anthropic("claude-opus-4-20250514"),
+      system: prompts.generativeUi.system,
+      temperature: 0.7,
+      messages: [
+        {
+          role: "user",
+          content: messageContent,
+        },
+      ],
+    });
 
-      // Convert to streaming response
+    // Convert to streaming response
     const stream = new ReadableStream({
-        async start(controller) {
-          try {
-            for await (const chunk of result.textStream) {
-              const encoder = new TextEncoder();
-              controller.enqueue(encoder.encode(chunk));
-            }
-            controller.close();
-          } catch (error) {
-            controller.error(error);
+      async start(controller) {
+        try {
+          for await (const chunk of result.textStream) {
+            const encoder = new TextEncoder();
+            controller.enqueue(encoder.encode(chunk));
           }
-        },
-      });
+          controller.close();
+        } catch (error) {
+          controller.error(error);
+        }
+      },
+    });
 
-      return new Response(stream, {
-        headers: {
-          "Content-Type": "text/html; charset=utf-8",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-        },
-      });
-  
-
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   } catch (error) {
     console.error("Workflow redesign API error:", error);
     return NextResponse.json(
@@ -211,3 +229,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

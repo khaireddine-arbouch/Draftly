@@ -17,12 +17,13 @@ export const autosaveProjectWorkflow = inngest.createFunction(
   { id: "autosave-project-workflow" },
   { event: "project/autosave.requested" },
   async ({ event }) => {
-    const { projectId, shapesData, viewportData } = event.data;
+    const { projectId, shapesData, viewportData, thumbnail } = event.data;
     try {
       await fetchMutation(api.projects.updateProjectSketches, {
         projectId,
         sketchesData: shapesData,
         viewportData,
+        thumbnail,
       });
       return { success: true };
     } catch (error) {
@@ -73,7 +74,16 @@ export const handlePolarEvent = inngest.createFunction(
 
         if (metaUserId) {
           console.log("✔ [Inngest] Using metadata userId:", metaUserId);
-          return metaUserId as unknown as Id<"users">;
+          // Validate the ID format before casting
+          if (!metaUserId.startsWith("j") || metaUserId.length < 10) {
+            console.error(
+              "[Inngest] Invalid userId format in metadata:",
+              metaUserId
+            );
+            // Fall through to email lookup
+          } else {
+            return metaUserId as unknown as Id<"users">;
+          }
         }
 
         const email = sub?.customer?.email ?? order?.customer?.email ?? null;
@@ -231,7 +241,7 @@ export const handlePolarEvent = inngest.createFunction(
     const idk = grantKey(polarSubscriptionId, currentPeriodEnd, incoming.id);
     console.log("[Inngest] Idempotency key:", idk);
 
-    if (entitled && (looksCreate || looksRenew || true)) {
+    if (entitled && (looksCreate || looksRenew)) {
       const grant = await step.run("grant-credits", async () => {
         try {
           console.log(

@@ -4,10 +4,11 @@ export const Line = ({ shape }: { shape: LineShape }) => {
   const { startX, startY, endX, endY } = shape;
   
   // Calculate bounding box for the SVG
-  const minX = Math.min(startX, endX) - 5;
-  const minY = Math.min(startY, endY) - 5;
-  const maxX = Math.max(startX, endX) + 5;
-  const maxY = Math.max(startY, endY) + 5;
+  const padding = Math.max(5, (shape.strokeWidth || 1) / 2 + 1);
+  const minX = Math.min(startX, endX) - padding;
+  const minY = Math.min(startY, endY) - padding;
+  const maxX = Math.max(startX, endX) + padding;
+  const maxY = Math.max(startY, endY) + padding;
   const width = maxX - minX;
   const height = maxY - minY;
   

@@ -7,7 +7,7 @@ export interface ColorSwatch {
 }
 
 export type ColorSectionTitle =
-  | "Primary Colours"
+  | "Primary Colors"
   | "Secondary & Accent Colors"
   | "UI Component Colors"
   | "Utility & Form Colors"
@@ -45,7 +45,7 @@ export interface GenerateStyleGuideRequest {
 
 export interface GenerateStyleGuideResponse {
   success: boolean;
-  styleGuide: StyleGuide;
+  styleGuide?: StyleGuide;
   message: string;
 }
 

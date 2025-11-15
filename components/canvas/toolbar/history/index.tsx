@@ -13,25 +13,24 @@ const HistoryPill = () => {
     <div className="col-span-1 flex justify-start items-center">
       <div>
         <span
-          className="inline-flex items-center rounded-full backdrop-blur-xl bg-white/8 border border-white/12 p-2 text-neutral-300 saturate-150"
-          aria-hidden="true"
+          className="inline-flex items-center rounded-full bg-neutral-900/80 border border-white/16 p-2 text-neutral-300 saturate-150"
         >
           <button
             type="button"
             aria-label="Undo"
             disabled={!canUndo}
             onClick={() => dispatch(undo())}
-            className="inline-grid h-9 w-9 place-items-center rounded-full hover:bg-white/12 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="inline-grid h-9 w-9 place-items-center rounded-full hover:bg-neutral-800 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Undo2 size={18} className="opacity-80 stroke-[1.75]" />
           </button>
-          <span className="mx-1 h-5 w-px rounded bg-white/16" />
+          <span className="mx-1 h-5 w-px rounded bg-white/20" />
           <button
             type="button"
             aria-label="Redo"
             disabled={!canRedo}
             onClick={() => dispatch(redo())}
-            className="inline-grid h-9 w-9 place-items-center rounded-full hover:bg-white/12 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="inline-grid h-9 w-9 place-items-center rounded-full hover:bg-neutral-800 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Redo2 size={18} className="opacity-80 stroke-[1.75]" />
           </button>

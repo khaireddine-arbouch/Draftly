@@ -19,10 +19,44 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl = "https://draftly-huawei.vercel.app/";
+
 export const metadata: Metadata = {
-  title: "Draftly - Sketch to Code",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: "Draftly — AI Design Copilot for Morocco",
+    template: "%s | Draftly",
+  },
   description:
-    "Draftly is a platform that allows you to convert your sketches into code.",
+    "Draftly helps North African teams turn sketches into production-ready UI: autosave canvases, AI style guides, and Huawei Cloud-native workflows powered by Convex + Inngest.",
+  keywords: [
+    "Draftly",
+    "Huawei Cloud",
+    "AI design copilot",
+    "Convex",
+    "Inngest",
+    "Morocco design",
+    "Next.js 16",
+  ],
+  authors: [{ name: "Draftly Team" }],
+  alternates: {
+    canonical: siteUrl,
+  },
+  openGraph: {
+    url: siteUrl,
+    type: "website",
+    title: "Draftly — Huawei Cloud Native Design Copilot",
+    description:
+      "Collaborate on canvases, moodboards, and AI-built style guides tuned for Morocco’s creative economy.",
+    siteName: "Draftly",
+  },
+  twitter: {
+    card: "summary_large_image",
+    site: "@draftly",
+    title: "Draftly — Sketch to Production on Huawei Cloud",
+    description:
+      "Auto-generate style guides, autosave canvases, and sync subscriptions with Convex + Inngest.",
+  },
 };
 
 export default async function RootLayout({

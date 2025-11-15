@@ -24,8 +24,11 @@ const Page = async ({ searchParams }: Props) => {
   const colorGuide = guide?.colorSections || [];
   const typographyGuide = guide?.typographySections || [];
   const existingMoodBoardImages = await MoodBoardImagesQuery(projectId);
-  const guideImages = existingMoodBoardImages.images
-    ._valueJSON as unknown as MoodBoardImage[];
+  const guideImagesRaw =
+    existingMoodBoardImages.images?._valueJSON ?? [];
+  const guideImages = Array.isArray(guideImagesRaw)
+    ? (guideImagesRaw as MoodBoardImage[])
+    : [];
 
   return (
     <div>

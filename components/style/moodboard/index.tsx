@@ -31,7 +31,7 @@ function MoodboardImages({ guideImages }: Props) {
   };
 
   const searchParams = useSearchParams();
-  const projectId = useSearchParams().get("project");
+  const projectId = searchParams.get("project");
 
   return (
     <div className="flex flex-col gap-10">

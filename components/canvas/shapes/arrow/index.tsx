@@ -24,10 +24,11 @@ export const Arrow = ({ shape }: { shape: ArrowShape }) => {
   const arrowHead = calculateArrowHead(startX, startY, endX, endY, 12);
 
   // Calculate bounding box for the SVG
-  const minX = Math.min(startX, endX, arrowHead.x1, arrowHead.x2) - 5;
-  const minY = Math.min(startY, endY, arrowHead.y1, arrowHead.y2) - 5;
-  const maxX = Math.max(startX, endX, arrowHead.x1, arrowHead.x2) + 5;
-  const maxY = Math.max(startY, endY, arrowHead.y1, arrowHead.y2) + 5;
+  const padding = Math.max(5, Math.ceil(shape.strokeWidth / 2) + 2);
+  const minX = Math.min(startX, endX, arrowHead.x1, arrowHead.x2) - padding;
+  const minY = Math.min(startY, endY, arrowHead.y1, arrowHead.y2) - padding;
+  const maxX = Math.max(startX, endX, arrowHead.x1, arrowHead.x2) + padding;
+  const maxY = Math.max(startY, endY, arrowHead.y1, arrowHead.y2) + padding;
   const width = maxX - minX;
   const height = maxY - minY;
 

@@ -5,16 +5,25 @@ import { api } from "../../convex/_generated/api"; // API methods from Convex ba
 import { normalizeProfile, ConvexUserRaw } from "@/types/user";
 import { Id } from "@/convex/_generated/dataModel";
 
+const getAuthOptions = async () => {
+  const token = await convexAuthNextjsToken();
+  return token ? { token } : undefined;
+};
+
 // ProfileQuery: Fetches the current user profile with authentication
 export const ProfileQuery = async () => {
   // Get the current user authentication token
-  const token = await convexAuthNextjsToken();
+  const authOptions = await getAuthOptions();
+
+  if (!authOptions) {
+    return null;
+  }
 
   // Fetch user data with the authentication token
   return await fetchQuery(
     api.user.getCurrentUser, // API method to get the current user data
     {}, // Parameters for the query (none in this case)
-    { token } // Pass the authentication token as part of the query options
+    authOptions // Pass the authentication token as part of the query options
   );
 };
 
@@ -32,10 +41,15 @@ export const SubscriptionEntitlementQuery = async () => {
   }
 
   // Fetch boolean to check for subscription entitlement
+  const authOptions = await getAuthOptions();
+  if (!authOptions) {
+    return { entitlement: false, profileName: profile?.name ?? null };
+  }
+
   const entitlement = await fetchQuery(
     api.subscription.hasEntitlement,
     { userId: profile.id as Id<"users"> }, // Pass userId from profile
-    { token: await convexAuthNextjsToken() } // Pass the authentication token
+    authOptions // Pass the authentication token
   );
 
   // Return the entitlement status and profile name
@@ -59,10 +73,15 @@ export const ProjectsQuery = async () => {
 
   // If the profile exists, fetch the user's projects
   try {
-    const projects = await preloadQuery(
+    const authOptions = await getAuthOptions();
+    if (!authOptions) {
+      return { projects: null, profile };
+    }
+
+    const projects = await fetchQuery(
       api.projects.getUserProjects,
       { userId: profile.id as Id<"users"> }, // Pass the user ID to the query
-      { token: await convexAuthNextjsToken() } // Include the token for authorization
+      authOptions // Include the token for authorization
     );
 
     return { projects, profile };
@@ -74,13 +93,16 @@ export const ProjectsQuery = async () => {
 
 export const StyleGuideQuery = async (projectId: string) => {
   // Await the token for authentication
-  const token = await convexAuthNextjsToken();
+  const authOptions = await getAuthOptions();
+  if (!authOptions) {
+    return { styleGuide: null };
+  }
 
   // Make the query call with the projectId and token
   const styleGuide = await preloadQuery(
     api.projects.getProjectStyleGuide,
     { projectId: projectId as Id<"projects"> },
-    { token }
+    authOptions
   );
 
   return { styleGuide };
@@ -88,13 +110,16 @@ export const StyleGuideQuery = async (projectId: string) => {
 
 export const MoodBoardImagesQuery = async (projectId: string) => {
   // Await the token for authentication
-  const token = await convexAuthNextjsToken();
+  const authOptions = await getAuthOptions();
+  if (!authOptions) {
+    return { images: null };
+  }
 
   // Fetch images from the API with the projectId and token
   const images = await preloadQuery(
     api.moodboard.getMoodBoardImages,
     { projectId: projectId as Id<"projects"> },
-    { token }
+    authOptions
   );
 
   return { images };
@@ -111,11 +136,21 @@ export const ProjectQuery = async (projectId: string) => {
     return { project: null, profile: null };
   }
 
-  const project = await preloadQuery(
+  const authOptions = await getAuthOptions();
+  if (!authOptions) {
+    return { project: null, profile };
+  }
+
+  const projectDoc = await fetchQuery(
     api.projects.getProject,
     { projectId: projectId as Id<"projects"> },
-    { token: await convexAuthNextjsToken() }
+    authOptions
   );
+
+  const project =
+    projectDoc != null
+      ? (JSON.parse(JSON.stringify(projectDoc)) as Record<string, unknown>)
+      : null;
 
   return { project, profile };
 };
@@ -136,14 +171,17 @@ export const CreditsBalanceQuery = async () => {
     }
 
     // Step 4: Fetch the user's credit balance using the user ID from the profile
+    const authOptions = await getAuthOptions();
+    if (!authOptions) {
+      return { ok: false, balance: 0, profile };
+    }
+
     const balance = await preloadQuery(
       api.subscription.getCreditsBalance,
       {
         userId: profile.id as Id<"users">,
       },
-      {
-        token: await convexAuthNextjsToken(),
-      }
+      authOptions
     );
 
     // Step 5: Return the result
@@ -168,6 +206,11 @@ export const ConsumeCreditsQuery = async ({ amount }: { amount?: number }) => {
   }
 
   // Step 3: Fetch the current user's credit balance
+  const authOptions = await getAuthOptions();
+  if (!authOptions) {
+    return { ok: false, balance: 0, profile };
+  }
+
   const credits = await fetchMutation(
     api.subscription.consumeCredits,
     {
@@ -175,20 +218,105 @@ export const ConsumeCreditsQuery = async ({ amount }: { amount?: number }) => {
       userId: profile.id as Id<"users">,
       amount: amount || 1,
     },
-    {
-      token: await convexAuthNextjsToken(),
-    }
+    authOptions
   );
 
   // Step 4: Return the result with the profile and balance
   return { ok: credits.ok, balance: credits.balance, profile };
 };
 
+export const RefundCreditsQuery = async ({ amount }: { amount?: number }) => {
+  const rawProfile = await ProfileQuery();
+  const profile = normalizeProfile(
+    rawProfile as unknown as ConvexUserRaw | null
+  );
+
+  if (!profile?.id) {
+    return { ok: false, balance: 0, profile: null };
+  }
+
+  const authOptions = await getAuthOptions();
+  if (!authOptions) {
+    return { ok: false, balance: 0, profile };
+  }
+
+  const subscription = await fetchQuery(
+    api.subscription.getSubscriptionForUser,
+    { userId: profile.id as Id<"users"> },
+    authOptions
+  );
+
+  if (!subscription?._id) {
+    return { ok: false, balance: 0, profile };
+  }
+
+  const refundAmount = amount ?? 1;
+
+  if (refundAmount <= 0) {
+    return {
+      ok: false,
+      balance: subscription.creditsBalance ?? 0,
+      profile,
+    };
+  }
+
+  try {
+    const mutationAuthOptions = await getAuthOptions();
+    if (!mutationAuthOptions) {
+      return {
+        ok: false,
+        balance: subscription.creditsBalance ?? 0,
+        profile,
+      };
+    }
+
+    const result = await fetchMutation(
+      api.subscription.grantCreditsIfNeeded,
+      {
+        subscriptionId: subscription._id as Id<"subscriptions">,
+        idempotencyKey: `refund:${subscription._id}:${Date.now()}:${Math.random()}`,
+        amount: refundAmount,
+        reason: "ai:generation:refund",
+      },
+      mutationAuthOptions
+    );
+
+    if (!result?.ok) {
+      return {
+        ok: false,
+        balance: subscription.creditsBalance ?? 0,
+        profile,
+      };
+    }
+
+    return {
+      ok: true,
+      balance:
+        typeof result.balance === "number"
+          ? result.balance
+          : (subscription.creditsBalance ?? 0) + refundAmount,
+      profile,
+    };
+  } catch (error) {
+    console.error("Error refunding credits:", error);
+    return {
+      ok: false,
+      balance: subscription.creditsBalance ?? 0,
+      profile,
+    };
+  }
+};
+
 export const InspirationImagesQuery = async (projectId: string) => {
+  const authOptions = await getAuthOptions();
+  if (!authOptions) {
+    return { images: null };
+  }
+
   const images = await preloadQuery(
     api.inspiration.getInspirationImages,
     { projectId: projectId as Id<"projects"> },
-    { token: await convexAuthNextjsToken() }
+    authOptions
   );
 
   return { images };
