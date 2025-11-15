@@ -25,6 +25,17 @@ Draftly is a generative design studio for Morocco’s fast-growing creative sect
 - 🛰️ **Autosave & billing webhooks** – Inngest listens for canvas edits and Polar renewals.
 - 📱 **Responsive landing funnel** – SEO-ready and localized copy for Moroccan agencies.
 
+## 📚 Documentation
+
+Complete guides for setting up and deploying Draftly:
+
+- **[Self-Hosting Guide](docs/SELF_HOSTING.md)** – Complete Docker setup, deployment instructions, and environment variable templates
+- **[Environment Variables Guide](docs/ENVIRONMENT_VARIABLES.md)** – Step-by-step instructions for obtaining all required API keys and credentials from each service provider
+
+**Quick Links:**
+- 🐳 [Docker Hub Image](https://hub.docker.com/r/khaireddinearb/draftly)
+- 🌐 [Live Demo](https://draftly-huawei.vercel.app/)
+
 ## Local Development
 
 ### Prerequisites
@@ -39,8 +50,11 @@ pnpm dev
 Navigate to `http://localhost:3000`.
 
 ### Required Environment Variables
-Create `.env.local` (or configure in Vercel dashboard) with:
+Create `.env.local` (or configure in Vercel dashboard) with the following variables.
 
+> 📖 **For detailed step-by-step instructions on obtaining each environment variable, see the [Environment Variables Setup Guide](docs/ENVIRONMENT_VARIABLES.md).**
+
+**Quick Reference:**
 | Key | Description |
 | --- | --- |
 | `NEXT_PUBLIC_APP_URL` | Public site URL (e.g., `https://draftly-huawei.com`) |
@@ -104,9 +118,9 @@ docker run -p 3000:3000 --env-file .env.docker khaireddinearb/draftly:latest
 
 **Docker Hub:** [khaireddinearb/draftly](https://hub.docker.com/r/khaireddinearb/draftly)
 
-**Documentation:**
-- [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) - Complete Docker setup and deployment guide
-- [`docs/ENVIRONMENT_VARIABLES.md`](docs/ENVIRONMENT_VARIABLES.md) - Step-by-step guide for obtaining all environment variables
+> 📖 **Complete Setup Guides:**
+> - **[Self-Hosting Guide](docs/SELF_HOSTING.md)** – Docker setup, deployment instructions, environment variable templates, and Docker Compose configuration
+> - **[Environment Variables Guide](docs/ENVIRONMENT_VARIABLES.md)** – Detailed step-by-step instructions for obtaining all API keys and credentials from each service provider (Convex, Google OAuth, Polar, Inngest, AI providers, etc.)
 
 ## License
 
