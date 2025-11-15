@@ -33,7 +33,7 @@ Complete guides for setting up and deploying Draftly:
 
 **Quick Links:**
 - 🐳 [Docker Hub Image](https://hub.docker.com/r/khaireddinearb/draftly)
-- 🌐 [Live Demo]([https://draftly-huawei.vercel.app/](https://youtu.be/9zZ4DiVfUVc))
+- 🌐 [Live Demo](https://youtu.be/9zZ4DiVfUVc)
 
 ## Local Development
 
