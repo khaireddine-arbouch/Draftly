@@ -4,7 +4,6 @@ Draftly is a generative design studio for Morocco’s fast-growing creative sect
 
 ## Why Draftly Wins SEO & Judging Points
 
-- **Clear audience signal** – copy, metadata, and Open Graph tags all emphasize “Morocco”, “Huawei Cloud”, and “AI design copilot”.
 - **Fast page experience** – optimized Next.js App Router build with image remote patterns and streaming partials.
 - **Link-ready assets** – shareable `/` landing page, `/api/inngest` health check, and sitemap-friendly structure for Vercel.
 
